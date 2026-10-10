@@ -1,0 +1,75 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<rss xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" version="2.0">
+  <channel>
+    <title>cs.AI updates on arXiv.org</title>
+    <link>http://rss.arxiv.org/rss/cs.AI</link>
+    <description>cs.AI updates on the arXiv.org e-print archive.</description>
+    <atom:link href="http://rss.arxiv.org/rss/cs.AI" rel="self" type="application/rss+xml"/>
+    <docs>http://www.rssboard.org/rss-specification</docs>
+    <language>en-us</language>
+    <lastBuildDate>Sat, 10 Oct 2026 04:00:00 +0000</lastBuildDate>
+    <managingEditor>rss-help@arxiv.org</managingEditor>
+    <pubDate>Sat, 10 Oct 2026 00:00:00 -0400</pubDate>
+    <skipDays>
+      <day>Sunday</day>
+      <day>Saturday</day>
+    </skipDays>
+    <item>
+      <title>An Explainable Header-Centric Framework for Large-Scale Semantic Table Interpretation and Data Quality Assessment</title>
+      <link>https://arxiv.org/abs/2610.10541</link>
+      <description>arXiv:2610.10541v1 Announce Type: new 
+Abstract: Knowledge Graph (KG) quality depends not only on downstream graph validation, but also on the quality of tabular metadata used before integration. In metadata-only Semantic Table Interpretation (STI), where cell values are unavailable, noisy, or unsuitable, column headers become a critical source of semantic evidence for traceable KG preparation.
+  We present an explainable, header-centric framework for metadata-only Column Type Annotation (CTA) and Data Quality Assessment (DQA). The framework maps headers to 39 interpretable FinalFormat types using curated lexical resources and preserves token-level traceability through SourceKeywords. Each assigned type activates validation rules based on a taxonomy of Data Quality Issues (DQIs), producing detections such as missing data, duplicates, domain violations, wrong data type, and temporal mismatch. These detections are aggregated into HeadersIQ, a lightweight, unweighted data source-level quality metric.
+  The framework was evaluated across heterogeneous benchmarks, including UCI, Prague, Kaggle, VizNet/Sato, SOTAB, T2Dv2, and the SemTab 2024 Metadata-to-KG track, comprising around 120,000 header columns. The results show broad practical coverage across noisy real-world metadata, while a parallel KG-mapping pathway supports alignment to DBpedia and Schema.org. On the SemTab 2024 Metadata-to-KG track, the official GT-strict evaluation was modest. However, a blinded diagnostic audit indicates that many mismatches reflect benchmark granularity, aliasing, and ontology-selection effects rather than wholly implausible header-centric predictions. We report this audit as diagnostic evidence on disagreement patterns, not as revised benchmark performance. Overall, the paper presents a reusable workflow for metadata-driven semantic annotation, data source-level quality monitoring, and KG-oriented benchmark diagnosis.</description>
+      <guid isPermaLink="false">oai:arXiv.org:2610.10541v1</guid>
+      <category>cs.AI</category>
+      <category>cs.CL</category>
+      <pubDate>Sat, 10 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>new</arxiv:announce_type>
+      <dc:rights>http://creativecommons.org/licenses/by/4.0/</dc:rights>
+      <dc:creator>Marcelo Valentim Silva, Hannes Herrmann, Valerie Maxville</dc:creator>
+    </item>
+    <item>
+      <title>Discovering Global False Negatives On the Fly for Self-supervised Contrastive Learning</title>
+      <link>https://arxiv.org/abs/2502.20612</link>
+      <description>arXiv:2502.20612v2 Announce Type: cross 
+Abstract: In self-supervised contrastive learning, negative pairs are typically constructed using an anchor image and a sample drawn from the entire dataset, excluding the anchor. However, this approach can result in the creation of negative pairs with similar semantics, referred to as "false negatives", leading to their embeddings being falsely pushed apart. To address this issue, we introduce GloFND, an optimization-based approach that automatically learns on the fly the threshold for each anchor data to identify its false negatives during training. In contrast to previous methods for false negative discovery, our approach globally detects false negatives across the entire dataset rather than locally within the mini-batch. Moreover, its per-iteration computation cost remains independent of the dataset size. Experimental results on image and image-text data demonstrate the effectiveness of the proposed method. Our implementation is available at https://github.com/vibalcam/GloFND.</description>
+      <guid isPermaLink="false">oai:arXiv.org:2502.20612v2</guid>
+      <category>cs.LG</category>
+      <category>cs.AI</category>
+      <category>cs.CV</category>
+      <category>stat.ML</category>
+      <pubDate>Sat, 10 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>cross</arxiv:announce_type>
+      <dc:rights>http://arxiv.org/licenses/nonexclusive-distrib/1.0/</dc:rights>
+      <dc:creator>Vicente Balmaseda, Bokun Wang, Ching-Long Lin, Tianbao Yang</dc:creator>
+    </item>
+    <item>
+      <title>Machine learning and information theory concepts towards an AI Mathematician</title>
+      <link>https://arxiv.org/abs/2403.04571</link>
+      <description>arXiv:2403.04571v2 Announce Type: replace 
+Abstract: The current state-of-the-art in artificial intelligence is impressive, especially in terms of mastery of language, but not so much in terms of mathematical reasoning. What could be missing? Can we learn something useful about that gap from how the brains of mathematicians go about their craft? This essay builds on the idea that current deep learning mostly succeeds at system 1 abilities -- which correspond to our intuition and habitual behaviors -- but still lacks something important regarding system 2 abilities -- which include reasoning and robust uncertainty estimation. It takes an information-theoretical posture to ask questions about what constitutes an interesting mathematical statement, which could guide future work in crafting an AI mathematician. The focus is not on proving a given theorem but on discovering new and interesting conjectures. The central hypothesis is that a desirable body of theorems better summarizes the set of all provable statements, for example by having a small description length while at the same time being close (in terms of number of derivation steps) to many provable statements.</description>
+      <guid isPermaLink="false">oai:arXiv.org:2403.04571v2</guid>
+      <category>cs.AI</category>
+      <pubDate>Sat, 10 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>replace</arxiv:announce_type>
+      <dc:rights>http://creativecommons.org/licenses/by/4.0/</dc:rights>
+      <arxiv:DOI>10.1090/bull/1839</arxiv:DOI>
+      <dc:creator>Yoshua Bengio, Esmeralda S. Whitammer</dc:creator>
+    </item>
+    <item>
+      <title>Policy Learning with a Language Bottleneck</title>
+      <link>https://arxiv.org/abs/2405.04118</link>
+      <description>arXiv:2405.04118v4 Announce Type: replace-cross 
+Abstract: Modern AI systems such as self-driving cars and game-playing agents can achieve superhuman performance, but often lack human-like generalization, interpretability, and inter-operability with human users. Inspired by the rich interactions between language and decision-making in humans, we introduce Policy Learning with a Language Bottleneck (PLLB), a framework enabling AI agents to generate linguistic rules that capture the high-level strategies underlying rewarding behaviors. PLLB alternates between a *rule generation* step guided by language models, and an *update* step where agents learn new policies guided by rules, even when a rule is insufficient to describe an entire complex policy. Across five diverse tasks, including a two-player signaling game, maze navigation, image reconstruction, and robot grasp planning, we show that PLLB agents are not only able to learn more interpretable and generalizable behaviors, but can also share the learned rules with human users, enabling more effective human-AI coordination. We provide source code for our experiments at https://github.com/meghabyte/bottleneck .</description>
+      <guid isPermaLink="false">oai:arXiv.org:2405.04118v4</guid>
+      <category>cs.LG</category>
+      <category>cs.AI</category>
+      <category>cs.CL</category>
+      <pubDate>Sat, 10 Oct 2026 00:00:00 -0400</pubDate>
+      <arxiv:announce_type>replace-cross</arxiv:announce_type>
+      <dc:rights>http://arxiv.org/licenses/nonexclusive-distrib/1.0/</dc:rights>
+      <dc:creator>Megha Srivastava, Cedric Colas, Dorsa Sadigh, Jacob Andreas</dc:creator>
+    </item>
+  </channel>
+</rss>

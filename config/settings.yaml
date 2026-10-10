@@ -3,7 +3,8 @@
 
 db_path: data/paperbot.sqlite
 digest_dir: digests
-contact_email: ""          # put in the arXiv User-Agent so arXiv can reach you if something misbehaves
+contact_email: ""          # put in the arXiv User-Agent so arXiv can reach you if something misbehaves.
+                           # Prefer PAPERBOT_CONTACT_EMAIL in .env (wins over this; keeps it out of git).
 
 harvest:
   lookback_overlap_days: 2   # re-query this much before the watermark; dedup absorbs repeats

@@ -34,6 +34,30 @@ def test_parse_rss_filters_announce_types(fixtures):
     assert p.pdf_url == "https://arxiv.org/pdf/2610.04211"
 
 
+def test_parse_rss_live_capture(fixtures):
+    """Real cs.AI feed captured 2026-10-10 (one item per announce type)."""
+    raw = (fixtures / "arxiv_rss_live.xml").read_bytes()
+    assert len(parse_rss(raw)) == 4
+    kept = parse_rss(raw, {"new", "cross"})
+    assert [p.arxiv_id for p in kept] == ["2610.10541", "2502.20612"]  # cross can be an older paper
+    p = kept[0]
+    assert p.title.startswith("An Explainable Header-Centric Framework")
+    assert p.authors == ["Marcelo Valentim Silva", "Hannes Herrmann", "Valerie Maxville"]
+    assert p.categories == ["cs.AI", "cs.CL"] and p.venue == "arXiv"
+    assert p.abstract.startswith("Knowledge Graph (KG) quality") and "Announce Type" not in p.abstract
+    # real weekend feed: channel with skipDays and no items
+    assert parse_rss((fixtures / "arxiv_rss_live_weekend.xml").read_bytes()) == []
+
+
+def test_parse_api_live_capture(fixtures):
+    """Real stat.AP query-API response captured 2026-10-10."""
+    papers = parse_api((fixtures / "arxiv_api_live.xml").read_bytes())
+    assert [p.arxiv_id for p in papers] == ["2610.12396", "2610.12377", "2610.12166"]
+    assert papers[0].pdf_url == "https://arxiv.org/pdf/2610.12396v1"
+    assert papers[1].categories == ["stat.ME", "stat.AP"]
+    assert all(p.published == "2026-10-08" and p.abstract for p in papers)
+
+
 def test_parse_api(fixtures):
     papers = parse_api((fixtures / "arxiv_api.xml").read_bytes())
     p = papers[0]

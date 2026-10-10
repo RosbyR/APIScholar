@@ -39,9 +39,11 @@ class HarvestStats:
 
 
 def make_client(cfg: Config) -> httpx.Client:
+    # Env var first so the address can live in .env instead of the committed settings file.
+    contact = Config.env("PAPERBOT_CONTACT_EMAIL") or cfg.settings.get("contact_email")
     return httpx.Client(
         timeout=httpx.Timeout(30.0),
-        headers={"User-Agent": user_agent(cfg.settings.get("contact_email"))},
+        headers={"User-Agent": user_agent(contact)},
         follow_redirects=True,
     )
 

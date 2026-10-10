@@ -1,0 +1,99 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/VjrVZDClZsQynIpA4huM8RAX4bI</id>
+  <title>arXiv Query: search_query=cat:stat.AP&amp;id_list=&amp;start=0&amp;max_results=3</title>
+  <updated>2026-10-10T23:33:56Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=cat:stat.AP&amp;start=0&amp;max_results=3&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>3</opensearch:itemsPerPage>
+  <opensearch:totalResults>24518</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12396v1</id>
+    <title>Mixup Barcodes for Topology-Aware Financial Decision Making</title>
+    <updated>2026-10-08T17:40:08Z</updated>
+    <link href="https://arxiv.org/abs/2610.12396v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12396v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We present a topology-aware system based on mixup barcodes and persistent homology for financial decision making. The suggested approach uses topological summaries obtained from Takens delay embeddings of a univariate price series to quantify structural changes between reference and current market regimes. The 1-Wasserstein distance between persistence diagrams, a mixup barcode disruption index, and persistence entropy divergence are combined to provide a novel stress score. A Golden Cross trading method is dynamically modulated by this score, which transforms a binary buy/sell signal into a continuous position-sizing process. At embedding settings chosen by maximizing in-sample Sharpe over a 72-point grid, in-sample assessment on the S&amp;P 500 and Bitcoin yields Sharpe ratios of 1.116 and 1.238, respectively, with much lower maximum drawdown compared with both Buy-and-Hold and the standard Golden Cross baseline. Our findings imply that topological summaries of market geometry include useful information that goes beyond traditional trend markers.</summary>
+    <category term="stat.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T17:40:08Z</published>
+    <arxiv:comment>22 pages, 7 figures, 2 tables</arxiv:comment>
+    <arxiv:primary_category term="stat.AP"/>
+    <author>
+      <name>Buddha Nath Sharma</name>
+    </author>
+    <author>
+      <name>Joe Opitz</name>
+    </author>
+    <author>
+      <name>Adam Moser</name>
+    </author>
+    <author>
+      <name>Sayam Palrecha</name>
+    </author>
+    <author>
+      <name>Sushovan Majhi</name>
+    </author>
+    <author>
+      <name>Atish Mitra</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12377v1</id>
+    <title>Formalization and consistency of clone-censor-weight</title>
+    <updated>2026-10-08T17:32:46Z</updated>
+    <link href="https://arxiv.org/abs/2610.12377v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12377v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Target trial emulation has become a standard framework for causal inference from observational data. Within this paradigm, the clone-censor-weight (CCW) methodology provides a practical way to deal with complex treatment and adherence definitions when treatment regimes are not distinguishable at baseline. Despite its increasing use, the statistical interpretation of CCW remains limited. In this work, we formalize the CCW methodology from a statistical viewpoint based on admissible sets and stochastic interventions. We characterize the causal estimands targeted by CCW, establish consistency of CCW estimators under standard identification assumptions, and provide theoretical guarantees for bootstrap-based inference methods.</summary>
+    <category term="stat.ME" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="stat.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T17:32:46Z</published>
+    <arxiv:primary_category term="stat.ME"/>
+    <author>
+      <name>Iqraa Meah</name>
+    </author>
+    <author>
+      <name>Charlotte Voinot</name>
+    </author>
+    <author>
+      <name>Stefan Michiels</name>
+    </author>
+    <author>
+      <name>Noémie Simon-Tillaux</name>
+    </author>
+    <author>
+      <name>Claire Jouffroy-Zeller</name>
+    </author>
+    <author>
+      <name>Inès Vaz-Luis</name>
+    </author>
+    <author>
+      <name>Clément Berenfeld</name>
+    </author>
+    <author>
+      <name>François Petit</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12166v1</id>
+    <title>Regime-Aware Estimation of Large Equity Correlation Matrices: Tail-Pairwise Dependence and Dynamic Conditional Correlation Decomposition for Water and Energy Sectors</title>
+    <updated>2026-10-08T15:40:39Z</updated>
+    <link href="https://arxiv.org/abs/2610.12166v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12166v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Equity correlation matrices are foundational to quantitative risk, yet the operational default of a single Gaussian-copula structure fit to the full sample has a structural defect: it forces asymptotic tail-independence and so cannot represent the joint moves that drive risk in stress episodes. We argue that the dependence of equity returns is not one object but three distinct under lower-tail, central, and upper-tail conditions, and that any estimator aimed at tail-sensitive applications should be regime-aware. We develop a decomposition that fits a dedicated dependence matrix to each regime, using a tail-dependence estimator grounded in multivariate regular variation in the two tails and a time-varying conditional-correlation model in the central regime, and recombines the three at the unconditional regime probabilities to form a steady-state matrix. The construction identifies tail-regime dependence that the Gaussian-copula benchmark structurally suppresses. Demonstrated on water- and energy-sector Exchange Traded Funds (ETF) constituents, the tail regimes reorganize the commodity partition produced by the central regime, identifying the pairs where the Gaussian-copula default systematically fails to identify joint extreme co-movement.</summary>
+    <category term="stat.AP" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T15:40:39Z</published>
+    <arxiv:primary_category term="stat.AP"/>
+    <author>
+      <name>Katherine B. Ensor</name>
+    </author>
+    <author>
+      <name>Quadri Popoola</name>
+    </author>
+    <author>
+      <name>Meredith Kruse</name>
+    </author>
+    <author>
+      <name>Daniel S. Cooley</name>
+    </author>
+  </entry>
+</feed>

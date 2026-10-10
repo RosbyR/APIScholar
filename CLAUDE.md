@@ -51,12 +51,12 @@ CLI (seed → triage → debate → digest → feedback → calibrate → label)
 | Config loading | `config.py`, `config/*.yaml` | yes | n/a |
 | Paper model, ID normalization | `models.py` | yes | n/a |
 | SQLite store, dedup, watermarks, run log, labels, feedback | `store.py` | yes | n/a |
-| Rate limiter, GET with backoff | `http.py` | yes | **no** |
-| arXiv RSS adapter | `harvest/arxiv.py` | yes (fixture) | **no** — fixture written from the documented 2024+ RSS format, not a captured live item |
-| arXiv query API (backfill) | `harvest/arxiv.py` | yes (fixture) | **no** |
-| OpenAlex adapter | `harvest/openalex.py` | yes (fixture) | **no** — filter/select/cursor syntax from docs |
+| Rate limiter, GET with backoff | `http.py` | yes | yes (10 Oct 2026; backoff path not yet exercised live) |
+| arXiv RSS adapter | `harvest/arxiv.py` | yes (fixture + live capture) | yes — format matched; `arxiv_rss_live*.xml` are real |
+| arXiv query API (backfill) | `harvest/arxiv.py` | yes (fixture + live capture) | yes |
+| OpenAlex adapter | `harvest/openalex.py` | yes (fixture) | yes — filter/select/cursor accepted |
 | Harvest orchestration | `harvest/__init__.py` | yes | n/a |
-| Jev client | `triage/jev.py` | yes | **no** — request/response shape matches docs.typesafe.ai/api (fetched Oct 2026) |
+| Jev client | `triage/jev.py` | yes | yes — live answers match the docstring shapes (10 Oct 2026) |
 | Question builder, gate | `triage/questions.py`, `triage/gate.py` | yes | **no** — rubric wording untested on real abstracts |
 | Triage orchestration (threaded) | `triage/__init__.py` | yes | n/a |
 | Full-text fetch + PDF extraction | `fulltext.py` | yes (generated PDF) | **no** |
@@ -92,9 +92,11 @@ Environment variables (never put secrets in YAML):
 | `TYPESAFE_API_KEY` | triage | Jev key from TypeSafe |
 | `OPENALEX_API_KEY` | harvest | Free key at openalex.org/settings/api; required since 13 Feb 2026 |
 | `ANTHROPIC_API_KEY` | debate | Claude API |
+| `PAPERBOT_CONTACT_EMAIL` | harvest | Contact address in the arXiv User-Agent |
 | `PAPERBOT_ROOT` | optional | Project root containing `config/` (default: cwd) |
 
-Also set `contact_email` in `config/settings.yaml` (goes into the User-Agent for arXiv).
+Also set `PAPERBOT_CONTACT_EMAIL` in `.env` (goes into the User-Agent for arXiv; falls back to
+`contact_email` in `config/settings.yaml`, but that file is committed, so prefer `.env`).
 
 ### CLI
 
@@ -147,9 +149,11 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
   every source that saw the paper.
 - Watermark per source, re-query `lookback_overlap_days` before it; dedup absorbs repeats.
   A failing source does **not** advance its watermark, so the gap is re-covered next run.
-- arXiv RSS has no date parameter (it is "today's announcements") and is **empty on Sat/Sun**
-  (feed declares `skipDays`; confirmed 10 Oct 2026). The digest warns only on weekday zeros.
-- Keep RSS announce types `new` and `cross`; `replace` would re-surface old papers.
+- arXiv RSS has no date parameter (it is "today's announcements") and is **mostly empty on Sat/Sun**
+  (feed declares `skipDays`). Not uniformly: on Sat 10 Oct 2026 cs.AI still served 472 items while
+  the other four categories were empty. The digest warns only on weekday zeros.
+- Keep RSS announce types `new` and `cross`; `replace` would re-surface old papers. Note `cross`
+  items can themselves be old papers newly cross-listed (seen: a 2502.* id); dedup handles repeats.
 
 **Debate**
 - Advocate and skeptic each give an opening and a rebuttal (rebuttal sees the other's
@@ -179,7 +183,8 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 - **OpenAlex:** API key required since 13 Feb 2026; free key = $1/day of usage; keyless = $0.10/day.
   Pass `api_key` as a query param. Use `per_page=100`. Abstracts come as `abstract_inverted_index`.
   Basic paging capped at 10k results (we use cursor paging). Usage headers / `/rate-limit` endpoint
-  show remaining budget. Some publishers' abstracts are absent.
+  show remaining budget. Some publishers' abstracts are absent. Live (10 Oct 2026): each list
+  request costs $0.001 (`x-ratelimit-cost-usd`, also `meta.cost_usd`); a daily run is ≤18 requests.
 - **Jev:** `POST https://api.typesafe.ai/v1/systemone`, `Authorization: Bearer <key>`,
   body `{state, model, questions}`. Score: 2–10 levels. Choice: ≤255 options. Errors 401/422/429/529.
   Published limits (third-party summary of TypeSafe docs): 64k tokens/request, 1,200 req/min.
@@ -188,16 +193,10 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 
 ## 6. Next steps for Claude Code, in order
 
-1. **Live smoke test each source** with real keys, one at a time, `-v` logging:
-   - `paperbot harvest` on a weekday. Confirm the RSS item format matches
-     `tests/fixtures/arxiv_rss.xml` (abstract after `Abstract:`, `arxiv:announce_type`,
-     `dc:creator` comma-separated). If it differs, **capture a real response as the new fixture**
-     and fix the parser — fixtures should be real data from here on.
-   - Confirm the OpenAlex `filter=title_and_abstract.search:...,from_publication_date:...` +
-     `select` + `cursor` combination works and check the usage cost per run in the response headers.
-   - `paperbot backfill --days 7` to seed a week of history.
-2. **Live Jev check:** `paperbot triage --limit 20`, then `paperbot show <id>` on a few. Verify the
-   real answer shapes match `triage/jev.py`'s docstring. Look at score distribution.
+1. ~~Live smoke test each source~~ — done 10 Oct 2026. RSS format matched; real captures are now
+   fixtures (`*_live.xml`). OpenAlex syntax works, ~$0.001/request. Backfill 7d: 3,253 fetched,
+   2,701 unique, ~2 min. Still worth one weekday `paperbot harvest` to see all five feeds populated.
+2. ~~Live Jev check~~ — done: answer shapes match `jev.py` exactly; ~1,000 input tokens/paper.
 3. **Calibrate:** `paperbot triage` on the backfill, `paperbot label --n 80`, `paperbot calibrate`,
    update `relevance_threshold`. Expect to iterate on the rubric wording in `profile.yaml`
    (boundary cases belong in level wording, not instructions).
