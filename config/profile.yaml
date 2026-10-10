@@ -1,0 +1,67 @@
+# Interest profile — the single source of truth for "what I care about".
+# It drives three things: what the harvester pulls, what Jev scores, and what the
+# debate agents argue about. DRAFT: edit freely, then re-run `paperbot calibrate`.
+
+reader:
+  name: Roz
+  summary: >
+    Applied mathematician finishing a master's degree, starting as a Process Quality
+    Engineer at Micron Technology (Boise) in March 2027, with prior internships at
+    Micron and Intel. Wants papers that could change how semiconductor process
+    quality work is done: agentic AI for smart manufacturing, data-driven modeling,
+    and traceability of materials, process steps and decisions.
+  priorities:
+    - Methods that could plausibly run on real fab data (wafer, lot, tool, metrology)
+    - Traceability: linking defects or excursions back to root causes across process steps
+    - Agentic / multi-agent LLM systems that act in industrial settings, with evaluation
+    - Data-driven and mathematical modeling (dynamical systems, statistics, optimization)
+  not_interested:
+    - Pure benchmark-chasing on generic NLP tasks with no industrial angle
+    - Consumer recommender systems, ad tech, social media analytics
+    - Hardware/device physics with no data or process-control component
+
+# Jev Score: relevance ladder, level 0 is the bottom. Higher always means more relevant.
+# Put boundary cases in the wording of the levels, not in the instructions.
+relevance:
+  instructions: >
+    How directly useful is this paper to a semiconductor process quality engineer
+    interested in agentic AI, data-driven modeling and traceability in manufacturing
+  levels:
+    - "Unrelated. No connection to manufacturing, industrial data, agentic AI, or quality."
+    - "Tangential. General ML, LLM or agent methods with no manufacturing or quality application, or manufacturing work with no data or AI component."
+    - "Adjacent. Applies ML, statistics or agents to manufacturing, quality or industrial operations outside semiconductors, or to semiconductors outside process quality."
+    - "Relevant. Data-driven or agentic methods for manufacturing quality, process control, root-cause analysis, or traceability that would transfer to a fab."
+    - "Core. Directly about semiconductor process quality, yield, excursion detection, or traceability using agentic AI or data-driven models on fab-like data."
+
+# Jev Nouls: independent topic flags. Several can be true at once.
+# must_have: true -> can rescue a paper scoring just under the threshold.
+facets:
+  semiconductor:
+    instructions: "The paper is about semiconductor manufacturing, wafers, fabs, or chip production."
+    must_have: true
+  traceability:
+    instructions: "The paper addresses traceability, genealogy or provenance: linking products, defects or decisions back to materials, tools, process steps or data sources."
+    must_have: true
+  agentic_ai:
+    instructions: "The paper builds or evaluates an LLM agent or multi-agent system that takes actions or makes decisions."
+    must_have: false
+  root_cause:
+    instructions: "The paper does root-cause analysis, fault diagnosis, or excursion / anomaly detection in a process."
+    must_have: false
+  process_control:
+    instructions: "The paper is about statistical process control, run-to-run control, virtual metrology, or process monitoring."
+    must_have: false
+  real_industrial_data:
+    instructions: "The paper evaluates on real industrial or production data rather than only synthetic or public toy datasets."
+    must_have: false
+
+# What the harvester pulls. Lean toward recall; Jev handles precision.
+sources:
+  arxiv_categories: [cs.AI, cs.MA, cs.LG, eess.SY, stat.AP]
+  openalex_queries:
+    - "semiconductor manufacturing traceability"
+    - "wafer yield root cause machine learning"
+    - "virtual metrology semiconductor"
+    - "multi-agent LLM manufacturing"
+    - "agentic AI smart manufacturing"
+    - "excursion detection fab process control"

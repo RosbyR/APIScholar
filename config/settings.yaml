@@ -1,0 +1,40 @@
+# Runtime settings. Secrets come from environment variables, never this file:
+#   TYPESAFE_API_KEY, OPENALEX_API_KEY, ANTHROPIC_API_KEY
+
+db_path: data/paperbot.sqlite
+digest_dir: digests
+contact_email: ""          # put in the arXiv User-Agent so arXiv can reach you if something misbehaves
+
+harvest:
+  lookback_overlap_days: 2   # re-query this much before the watermark; dedup absorbs repeats
+  first_run_days: 7          # how far back to look the very first time a source runs
+  arxiv:
+    enabled: true
+    min_interval_s: 3.0      # arXiv ToU: <= 1 request / 3 s, single connection
+    # announce types to keep from RSS: new, cross, replace, replace-cross
+    announce_types: [new, cross]
+  openalex:
+    enabled: true
+    min_interval_s: 0.2
+    per_page: 100
+    max_pages_per_query: 3
+
+triage:
+  jev_model: jev-1.13.0      # pin a version; switch to jev-latest deliberately, then recalibrate
+  concurrency: 8
+  timeout_s: 20
+  # UNCALIBRATED placeholder. Run `paperbot label` + `paperbot calibrate` and replace.
+  relevance_threshold: 2.5   # on the 0-4 relevance ladder in profile.yaml
+  # A paper scoring within `rescue_margin` below the threshold still passes if any
+  # "must_have" facet Noul is >= rescue_noul.
+  rescue_margin: 0.5
+  rescue_noul: 0.9
+
+debate:
+  enabled: true
+  max_papers_per_run: 8      # hard budget cap on LLM spend per run (highest Jev score first)
+  advocate_model: claude-sonnet-5-5
+  skeptic_model: claude-sonnet-5-5
+  judge_model: claude-opus-5-5
+  max_tokens: 1500
+  fulltext_max_chars: 60000  # truncate extracted PDF text before it goes into prompts
