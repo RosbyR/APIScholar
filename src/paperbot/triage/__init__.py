@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..config import Config
 from ..models import STATUS_NEW, STATUS_PASSED, STATUS_REJECTED, STATUS_TRIAGE_ERROR
@@ -25,6 +26,54 @@ class TriageStats:
     input_tokens: int = 0
 
 
+@dataclass
+class RegateStats:
+    checked: int = 0
+    newly_passed: int = 0      # rejected -> passed
+    newly_rejected: int = 0    # passed -> rejected
+    model_mismatch: int = 0    # answers came from a different jev_model than configured
+    changes: list[tuple[str, str, str, str]] = field(default_factory=list)  # (id, old, new, reason)
+
+
+def _decide(t: dict, answers: dict, must: list[str]):
+    return decide(answers, float(t.get("relevance_threshold", 2.5)), must,
+                  t.get("rescue_margin", 0.5), t.get("rescue_noul", 0.9))
+
+
+def run_regate(cfg: Config, store: Store, dry_run: bool = False) -> RegateStats:
+    """Re-apply the gate to `rejected`/`passed` papers from stored jev_answers (no Jev calls).
+
+    Use after changing relevance_threshold / rescue settings. Papers already debated or
+    digested are left alone. Answers from a different jev_model than the configured one are
+    still re-gated, but counted, because the threshold was calibrated for the configured model.
+    """
+    t = cfg.section("triage")
+    must = must_have_keys(cfg.profile)
+    pinned = t.get("jev_model")
+    stats = RegateStats()
+    for row in store.by_status(STATUS_REJECTED, STATUS_PASSED):
+        if not row["jev_answers"]:
+            continue
+        stats.checked += 1
+        if pinned and row["jev_model"] and row["jev_model"] != pinned:
+            stats.model_mismatch += 1
+        d = _decide(t, json.loads(row["jev_answers"]), must)
+        new = STATUS_PASSED if d.passed else STATUS_REJECTED
+        if new == row["status"]:
+            continue
+        stats.changes.append((row["id"], row["status"], new, d.reason))
+        if new == STATUS_PASSED:
+            stats.newly_passed += 1
+        else:
+            stats.newly_rejected += 1
+        if not dry_run:
+            store.update(row["id"], status=new)
+    if not dry_run:
+        store.log_run("regate", fetched=stats.checked, new=stats.newly_passed,
+                      note=f"newly_rejected={stats.newly_rejected} model_mismatch={stats.model_mismatch}")
+    return stats
+
+
 def make_jev_client(cfg: Config) -> JevClient:
     t = cfg.section("triage")
     return JevClient(
@@ -38,7 +87,6 @@ def run_triage(cfg: Config, store: Store, jev: JevClient, limit: int | None = No
     t = cfg.section("triage")
     questions = build_questions(cfg.profile)
     must = must_have_keys(cfg.profile)
-    threshold = float(t.get("relevance_threshold", 2.5))
     rows = store.by_status(STATUS_NEW, STATUS_TRIAGE_ERROR, limit=limit)
     stats = TriageStats()
     if not rows:
@@ -63,7 +111,7 @@ def run_triage(cfg: Config, store: Store, jev: JevClient, limit: int | None = No
                 store.update(pid, status=STATUS_TRIAGE_ERROR, error=str(e)[:500])
                 continue
             answers = resp["answers"]
-            d = decide(answers, threshold, must, t.get("rescue_margin", 0.5), t.get("rescue_noul", 0.9))
+            d = _decide(t, answers, must)
             store.update(
                 pid,
                 status=STATUS_PASSED if d.passed else STATUS_REJECTED,

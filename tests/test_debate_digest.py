@@ -87,7 +87,7 @@ def test_digest(cfg, store, tmp_path):
     store.log_run("harvest:arxiv_rss", fetched=0, new=0)  # zero on a weekday -> warning
     run_debate(cfg, store, FakeLLM(), abstract_only)
     path = build_digest(store, tmp_path / "digests", today=date(2026, 10, 8), since_iso="2000-01-01")
-    md = path.read_text()
+    md = path.read_text(encoding="utf-8")
     assert "# Paper digest — 2026-10-08" in md
     assert "Wafer agents" in md and "veto-me" not in md
     assert "**Why you care.**" in md and "(Table 3)" in md
@@ -95,7 +95,7 @@ def test_digest(cfg, store, tmp_path):
     assert "arXiv RSS returned 0 items on a weekday" in md
     assert store.get("arxiv:2610.10000")["status"] == STATUS_DIGESTED
     # second digest has nothing new and doesn't repeat papers
-    md2 = build_digest(store, tmp_path / "d2", today=date(2026, 10, 9), since_iso="2000-01-01").read_text()
+    md2 = build_digest(store, tmp_path / "d2", today=date(2026, 10, 9), since_iso="2000-01-01").read_text(encoding="utf-8")
     assert "Nothing new" in md2
 
 
@@ -133,7 +133,7 @@ def test_anthropic_llm_adapter_shape():
             return SimpleNamespace(content=[SimpleNamespace(type="text", text="hello "),
                                             SimpleNamespace(type="text", text="world")])
 
-    llm = AnthropicLLM(client=SimpleNamespace(messages=Msgs()))
+    llm = AnthropicLLM(client=SimpleNamespace(messages=Msgs()), fallbacks=False)
     out = llm.complete(model="claude-sonnet-5-5", system="sys", prompt="p", max_tokens=10)
     assert out == "hello world"
     assert seen == {"model": "claude-sonnet-5-5", "max_tokens": 10, "system": "sys",

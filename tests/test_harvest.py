@@ -45,7 +45,7 @@ def test_parse_api(fixtures):
 
 
 def test_openalex_abstract_rebuild(fixtures):
-    data = json.loads((fixtures / "openalex.json").read_text())
+    data = json.loads((fixtures / "openalex.json").read_text(encoding="utf-8"))
     assert rebuild_abstract(data["results"][1]["abstract_inverted_index"]) == \
         "Traceability across assembly steps enables faster assembly investigations."
     assert rebuild_abstract(None) == ""
@@ -61,7 +61,7 @@ def test_sources_over_http_and_dedup(cfg, store, fixtures):
     respx.get("https://rss.arxiv.org/rss/cs.MA").mock(
         return_value=httpx.Response(200, content=(fixtures / "arxiv_rss.xml").read_bytes()))
     oa = respx.get("https://api.openalex.org/works").mock(
-        return_value=httpx.Response(200, json=json.loads((fixtures / "openalex.json").read_text())))
+        return_value=httpx.Response(200, json=json.loads((fixtures / "openalex.json").read_text(encoding="utf-8"))))
     sleeps = []
     with httpx.Client() as client:
         sources = [

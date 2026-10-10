@@ -77,6 +77,20 @@ CREATE TABLE IF NOT EXISTS feedback (         -- thumbs on digest entries
     note       TEXT,
     at         TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS llm_calls (        -- one row per Claude request, for cost tracking
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    at            TEXT NOT NULL,
+    paper_id      TEXT NOT NULL,
+    role          TEXT NOT NULL,              -- advocate | skeptic | judge
+    model         TEXT NOT NULL,              -- model that served the request (after any fallback)
+    input_tokens  INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd      REAL                        -- NULL if the model had no price in settings
+);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_at ON llm_calls(at);
 """
 
 
@@ -202,6 +216,34 @@ class Store:
 
     def runs_since(self, ts: str) -> list[sqlite3.Row]:
         return list(self.conn.execute("SELECT * FROM runs WHERE started >= ? ORDER BY id", (ts,)))
+
+    # ---- LLM cost log ------------------------------------------------------------
+    def log_llm_call(self, paper_id: str, call: dict[str, Any]) -> None:
+        with self.tx() as c:
+            c.execute(
+                """INSERT INTO llm_calls(at, paper_id, role, model, input_tokens, output_tokens,
+                   cache_read_tokens, cache_write_tokens, cost_usd) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (now_iso(), paper_id, call["role"], call["model"], call["input_tokens"], call["output_tokens"],
+                 call.get("cache_read_input_tokens", 0), call.get("cache_creation_input_tokens", 0),
+                 call.get("cost_usd")),
+            )
+
+    def llm_cost_since(self, ts: str) -> sqlite3.Row:
+        """Totals since `ts`: calls, papers, tokens, cost (cost sums priced calls only)."""
+        return self.conn.execute(
+            """SELECT COUNT(*) AS calls, COUNT(DISTINCT paper_id) AS papers,
+                      COALESCE(SUM(input_tokens + cache_read_tokens + cache_write_tokens), 0) AS input_tokens,
+                      COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                      COALESCE(SUM(cost_usd), 0) AS cost_usd,
+                      SUM(cost_usd IS NULL) AS unpriced
+               FROM llm_calls WHERE at >= ?""", (ts,)).fetchone()
+
+    def llm_cost_by_day(self, ts: str) -> list[sqlite3.Row]:
+        return list(self.conn.execute(
+            """SELECT substr(at, 1, 10) AS day, model, COUNT(*) AS calls, COUNT(DISTINCT paper_id) AS papers,
+                      SUM(input_tokens + cache_read_tokens + cache_write_tokens) AS input_tokens,
+                      SUM(output_tokens) AS output_tokens, COALESCE(SUM(cost_usd), 0) AS cost_usd
+               FROM llm_calls WHERE at >= ? GROUP BY day, model ORDER BY day, model""", (ts,)))
 
     # ---- labels / feedback -----------------------------------------------------
     def add_label(self, paper_id: str, relevant: bool) -> None:

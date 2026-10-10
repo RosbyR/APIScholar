@@ -56,6 +56,20 @@ def cmd_triage(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_regate(cfg: Config, args) -> int:
+    from .triage import run_regate
+    stats = run_regate(cfg, _store(cfg), dry_run=args.dry_run)
+    for pid, old, new, reason in stats.changes:
+        print(f"{pid}: {old} -> {new}  ({reason})")
+    verb = "would change" if args.dry_run else "changed"
+    print(f"checked {stats.checked}, {verb}: +{stats.newly_passed} passed, +{stats.newly_rejected} rejected")
+    if stats.model_mismatch:
+        print(f"note: {stats.model_mismatch} papers were scored by a different jev_model than "
+              f"{cfg.section('triage').get('jev_model')}; re-gating them uses a threshold calibrated "
+              "for another model.", file=sys.stderr)
+    return 0
+
+
 def _text_getter(cfg: Config):
     from .fulltext import get_text
     from .harvest import make_client
@@ -84,7 +98,23 @@ def cmd_digest(cfg: Config, args) -> int:
 
 
 def cmd_run(cfg: Config, args) -> int:
-    """Full pipeline. Each stage runs even if an earlier one partly failed; the digest reports health."""
+    """Full pipeline under a single-instance lock (scheduled runs must not overlap)."""
+    from .lock import LockHeld, RunLock
+    lock = RunLock(cfg.db_path.parent / "paperbot.lock",
+                   stale_after_s=float(cfg.settings.get("lock_stale_hours", 6)) * 3600)
+    try:
+        lock.acquire()
+    except LockHeld as e:
+        print(f"skipping: {e}", file=sys.stderr)
+        return 2
+    try:
+        return _run_stages(cfg, args)
+    finally:
+        lock.release()
+
+
+def _run_stages(cfg: Config, args) -> int:
+    """Each stage runs even if an earlier one partly failed; the digest reports health."""
     rc = 0
     for name, fn in (("harvest", cmd_harvest), ("triage", cmd_triage), ("debate", cmd_debate)):
         try:
@@ -103,6 +133,25 @@ def cmd_status(cfg: Config, args) -> int:
     print(json.dumps(store.status_counts(), indent=2))
     for r in store.conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 10"):
         print(dict(r))
+    return 0
+
+
+def cmd_costs(cfg: Config, args) -> int:
+    store = _store(cfg)
+    since = (datetime.now(timezone.utc) - timedelta(days=args.days)).replace(microsecond=0).isoformat()
+    rows = store.llm_cost_by_day(since)
+    if not rows:
+        print(f"No Claude calls in the last {args.days} days.")
+        return 0
+    print(f"{'day':<12}{'model':<22}{'papers':>7}{'calls':>7}{'in tok':>12}{'out tok':>10}{'USD':>9}")
+    for r in rows:
+        print(f"{r['day']:<12}{r['model']:<22}{r['papers']:>7}{r['calls']:>7}"
+              f"{r['input_tokens']:>12,}{r['output_tokens']:>10,}{r['cost_usd']:>9.2f}")
+    t = store.llm_cost_since(since)
+    per_paper = t["cost_usd"] / t["papers"] if t["papers"] else 0
+    print(f"\nTotal {args.days}d: ${t['cost_usd']:.2f} over {t['papers']} papers (${per_paper:.3f}/paper)")
+    if t["unpriced"]:
+        print(f"{t['unpriced']} calls have no price (model missing from debate.pricing); total is an undercount.")
     return 0
 
 
@@ -177,10 +226,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("harvest").set_defaults(fn=cmd_harvest)
     b = sub.add_parser("backfill"); b.add_argument("--days", type=int, default=7); b.set_defaults(fn=cmd_backfill)
     t = sub.add_parser("triage"); t.add_argument("--limit", type=int); t.set_defaults(fn=cmd_triage)
+    g = sub.add_parser("regate", help="re-apply the gate from stored Jev answers after a threshold change")
+    g.add_argument("--dry-run", action="store_true"); g.set_defaults(fn=cmd_regate)
     sub.add_parser("debate").set_defaults(fn=cmd_debate)
     sub.add_parser("digest").set_defaults(fn=cmd_digest)
     r = sub.add_parser("run"); r.set_defaults(fn=cmd_run, limit=None)
     sub.add_parser("status").set_defaults(fn=cmd_status)
+    co = sub.add_parser("costs", help="Claude token usage and spend per day/model")
+    co.add_argument("--days", type=int, default=30); co.set_defaults(fn=cmd_costs)
     s = sub.add_parser("show"); s.add_argument("paper_id"); s.set_defaults(fn=cmd_show)
     l = sub.add_parser("label"); l.add_argument("--n", type=int, default=50); l.set_defaults(fn=cmd_label)
     c = sub.add_parser("calibrate"); c.add_argument("--beta", type=float, default=2.0); c.set_defaults(fn=cmd_calibrate)

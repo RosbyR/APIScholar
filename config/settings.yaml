@@ -36,5 +36,12 @@ debate:
   advocate_model: claude-sonnet-5-5
   skeptic_model: claude-sonnet-5-5
   judge_model: claude-opus-5-5
-  max_tokens: 1500
+  # Thinking is always on for Opus 5.5 and counts against max_tokens, so leave headroom:
+  # at 1500 the judge can run out mid-thought and return truncated JSON.
+  max_tokens: 16000
   fulltext_max_chars: 60000  # truncate extracted PDF text before it goes into prompts
+  # USD per 1M tokens, for the cost log (Anthropic first-party rates, checked 2026-10-06).
+  # A model missing here is still logged, just without a cost. cache_write defaults to 1.25x input.
+  pricing:
+    claude-opus-5-5:   {input: 4.00, output: 20.00, cache_read: 0.20}
+    claude-sonnet-5-5: {input: 2.00, output: 10.00, cache_read: 0.20}

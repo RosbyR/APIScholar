@@ -25,6 +25,13 @@ def _health(store: Store, since_iso: str, today: date) -> list[str]:
             warnings.append("arXiv RSS returned 0 items on a weekday — check the feed or the parser.")
     if not harvest:
         warnings.append("No harvest runs recorded since the last digest.")
+    cost = store.llm_cost_since(since_iso)
+    if cost["calls"]:
+        lines.append(f"- Claude: {cost['papers']} paper(s) debated, {cost['calls']} calls, "
+                     f"{cost['input_tokens']:,} in / {cost['output_tokens']:,} out tokens, ${cost['cost_usd']:.2f}")
+        if cost["unpriced"]:
+            warnings.append(f"{cost['unpriced']} Claude calls used a model with no price in debate.pricing; "
+                            "the cost above is an undercount.")
     counts = store.status_counts()
     if counts.get(STATUS_TRIAGE_ERROR):
         warnings.append(f"{counts[STATUS_TRIAGE_ERROR]} papers failed Jev triage and will be retried.")

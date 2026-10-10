@@ -42,7 +42,7 @@ text generation); Claude = all writing (debate, judge); everything else = plain 
 ## 2. Status: what is done and how sure we are
 
 Built in a sandbox that **could not reach arXiv, OpenAlex, TypeSafe or Anthropic**. Everything
-below is implemented and covered by offline tests (`pytest`: 29 passing, mocked HTTP via
+below is implemented and covered by offline tests (`pytest`: 41 passing, mocked HTTP via
 `respx`, fake Jev and fake LLM in `tests/conftest.py`). An offline end-to-end run through the
 CLI (seed → triage → debate → digest → feedback → calibrate → label) also worked.
 
@@ -65,9 +65,14 @@ CLI (seed → triage → debate → digest → feedback → calibrate → label)
 | Digest | `digest.py` | yes | n/a |
 | Calibration (sweep, stratified sampling) | `calibrate.py` | yes | n/a |
 | CLI | `cli.py` | smoke-tested offline | n/a |
+| Re-gate from stored answers | `triage/__init__.py` (`run_regate`) | yes | n/a |
+| Claude cost log (`llm_calls` table, `paperbot costs`, digest line) | `debate/`, `store.py` | yes | **no** — `usage` field names from the Anthropic SDK 1.13 docs |
+| Refusal fallback + refusal/max_tokens handling | `debate/llm.py` | yes (fake client) | **no** |
+| Run lock, `.env` loading | `lock.py`, `config.py` | yes | n/a |
+| Windows Task Scheduler scripts | `scripts/*.ps1` | parse-checked only | **not registered yet** |
 
-**Not built yet:** scheduling, digest delivery (email/Slack/etc.), re-gating after threshold
-changes, Semantic Scholar adapter, journal RSS adapter, cost tracking for Claude calls.
+**Not built yet:** digest delivery (email/Slack/etc.), Semantic Scholar adapter, journal RSS adapter,
+prompt caching for the debate (see §6 step 5).
 
 ---
 
@@ -76,7 +81,7 @@ changes, Semantic Scholar adapter, journal RSS adapter, cost tracking for Claude
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env          # fill in keys; load with your shell or direnv
+cp .env.example .env          # fill in keys; paperbot loads <root>/.env itself (real env vars win)
 pytest                        # must stay green and must never touch the network
 ```
 
@@ -97,10 +102,13 @@ Also set `contact_email` in `config/settings.yaml` (goes into the User-Agent for
 paperbot harvest            # all enabled sources, since watermark − overlap
 paperbot backfill --days 7  # arXiv query API, one-off history pull
 paperbot triage [--limit N] # Jev-score new + previously failed papers, then gate
+paperbot regate [--dry-run] # re-apply the gate to rejected/passed papers from stored answers (no Jev calls)
 paperbot debate             # debate up to debate.max_papers_per_run passed papers (highest score first)
 paperbot digest             # write digests/YYYY-MM-DD.md, mark papers digested
-paperbot run                # harvest → triage → debate → digest (each stage runs even if an earlier one failed)
+paperbot run                # harvest → triage → debate → digest (each stage runs even if an earlier one failed);
+                            #   holds data/paperbot.lock, exits 2 if another run holds it (stale after lock_stale_hours, default 6)
 paperbot status | show <id>
+paperbot costs [--days 30]  # Claude tokens and USD per day/model, $/paper
 paperbot label [--n 50]     # interactive hand-labeling, stratified across score buckets, score hidden
 paperbot calibrate          # precision/recall/F2 per threshold + suggestion
 paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
@@ -152,6 +160,11 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 - Budget cap `debate.max_papers_per_run` (default 8), highest Jev score first; overflow waits
   in `passed` and is reported in the digest.
 - Models: advocate/skeptic `claude-sonnet-5-5`, judge `claude-opus-5-5` (configurable).
+- `max_tokens` is 16000: thinking is always on for Opus 5.5 and counts against it (1500 risked truncated judge JSON).
+- Requests use the server-side refusal fallback (`fallbacks="default"`, beta `server-side-fallback-2026-07-01`).
+  A refusal that survives the fallback raises `LLMRefusal` → `debate_error`. Usage is attributed to the model
+  that actually served the call; models missing from `debate.pricing` are logged with NULL cost and flagged.
+- Every Claude call (including ones in debates that later fail) is a row in `llm_calls`.
 - Full text: arXiv PDF via `pdf_url`, references section trimmed, capped at 60k chars;
   falls back to abstract and says so in the prompt and digest ("based on abstract only").
 
@@ -188,14 +201,17 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 3. **Calibrate:** `paperbot triage` on the backfill, `paperbot label --n 80`, `paperbot calibrate`,
    update `relevance_threshold`. Expect to iterate on the rubric wording in `profile.yaml`
    (boundary cases belong in level wording, not instructions).
-4. **Re-gate command:** add `paperbot regate` that re-applies the gate to `rejected`/`passed`
-   papers from stored `jev_answers` (no new Jev calls) after a threshold change.
+4. ~~Re-gate command~~ — done: `paperbot regate [--dry-run]` after every threshold change.
 5. **Debate on real papers:** run `paperbot debate` with the cap at 2–3, read the transcripts
    (`paperbot show`), tune prompts. Check the judge actually vetoes weak papers and that
-   `key_evidence` locations are real. Add a cost log (tokens from the Anthropic response `usage`).
-6. **Scheduling:** daily on Roz's machine (cron or launchd on macOS) — run on weekdays after the
-   arXiv announcement (~00:00 US Eastern, so e.g. 06:00 America/Denver). Use a lock file so two
-   runs can't overlap. Alternative: GitHub Actions cron with the SQLite DB persisted as an artifact.
+   `key_evidence` locations are real. Check `paperbot costs` for real $/paper (cost log is built).
+   Cheap win to try then: the reader+paper block is a shared prefix across the 4 debate turns —
+   split it into its own content block with `cache_control` so rebuttals read it from cache.
+   Also consider setting `output_config.effort` explicitly (Opus 5.5 defaults to `medium`).
+6. **Scheduling:** the run lock is built. Roz's machine is Windows: `scripts\install-schedule.ps1`
+   registers a weekday 06:00 (local) Task Scheduler job that runs `scripts\run-daily.ps1`
+   (logs in `logs/`). Register it only after the live smoke tests pass and `.env` has keys.
+   (On macOS use launchd; alternative: GitHub Actions cron with the DB persisted as an artifact.)
 7. **Delivery:** decide with Roz (email, Slack, Notion, or just the Markdown file). Keep it a
    separate stage after `digest`.
 8. Optional sources: Semantic Scholar (citation watches), journal RSS (IEEE TSM, J. Manuf. Systems).
@@ -211,6 +227,7 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 
 - Tests never touch the network: mock HTTP with `respx`; use `FakeJev`/`FakeLLM`.
   When adding real-data fixtures, strip anything personal.
-- Never commit `.env`, `data/`, or `digests/` (see `.gitignore`).
+- Never commit `.env`, `data/`, `digests/`, or `logs/` (see `.gitignore`).
+- On Windows, always pass `encoding="utf-8"` to `read_text`/`write_text`/`open` (the default is cp1252).
 - `profile.yaml` is user-owned content; keep code free of hard-coded interests.
 - Keep the stage boundaries (harvest / triage / debate / digest) so each can be rerun alone.
