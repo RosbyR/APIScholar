@@ -60,7 +60,7 @@ def render_entry(row) -> str:
     if j.get("key_evidence"):
         out += ["", "**Evidence.**"] + [f"- {e.get('claim')} ({e.get('where')})" for e in j["key_evidence"]]
     if j.get("caveats"):
-        out += ["", "**Caveats.** " + "; ".join(j["caveats"])]
+        out += ["", "**Caveats.**"] + [f"- {c}" for c in j["caveats"]]
     if j.get("debate_takeaway"):
         out += ["", f"*Debate:* {j['debate_takeaway']}"]
     out += ["", f"`paperbot feedback {row['id']} up` / `down`", ""]

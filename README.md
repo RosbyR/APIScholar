@@ -11,5 +11,5 @@ pytest
 paperbot run
 ```
 
-Edit `config/profile.yaml` to change what counts as relevant. See `CLAUDE.md` for the
+All commands: see `cheatsheet.md`. Edit `config/profile.yaml` to change what counts as relevant. See `CLAUDE.md` for the
 architecture, design decisions, status, and next steps.
