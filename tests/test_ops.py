@@ -13,7 +13,8 @@ from paperbot.debate import run_debate
 from paperbot.debate.llm import AnthropicLLM, LLMRefusal, cost_usd
 from paperbot.digest import build_digest
 from paperbot.lock import LockHeld, RunLock
-from paperbot.models import STATUS_DEBATE_ERROR, STATUS_DIGESTED, STATUS_PASSED, STATUS_REJECTED, Paper
+from paperbot.models import (STATUS_DEBATE_ERROR, STATUS_DIGESTED, STATUS_PASSED, STATUS_REJECTED,
+                             STATUS_SKIM, Paper)
 from paperbot.triage import run_regate, run_triage
 
 
@@ -48,6 +49,25 @@ def test_regate_after_threshold_change(cfg, store):
     cfg.settings["triage"]["relevance_threshold"] = 2.0
     stats = run_regate(cfg, store)
     assert stats.newly_passed == 2 and store.get(cook)["status"] == STATUS_REJECTED
+
+
+def test_regate_skim_papers(cfg, store):
+    metro, trace, _ = _triaged(cfg, store)
+    store.update(metro, status=STATUS_SKIM)
+    store.update(trace, status=STATUS_SKIM)
+    cfg.settings["triage"]["relevance_threshold"] = 2.8   # metrology 2.9 still passes, traceability doesn't
+    stats = run_regate(cfg, store)
+    assert store.get(metro)["status"] == STATUS_SKIM       # still passing: stays on the skim list
+    assert store.get(trace)["status"] == STATUS_REJECTED and stats.newly_rejected == 1
+
+
+def test_rescore_reruns_triaged_but_not_debated(cfg, store):
+    metro, trace, cook = _triaged(cfg, store)
+    store.update(trace, status=STATUS_DIGESTED)
+    jev = FakeJev()
+    assert run_triage(cfg, store, jev).scored == 0          # normal run: nothing new to score
+    stats = run_triage(cfg, store, jev, rescore=True)
+    assert stats.scored == 2 and jev.calls == 2              # metro + cook; the digested paper is untouched
 
 
 def test_regate_leaves_later_stages_alone_and_flags_model_mismatch(cfg, store):

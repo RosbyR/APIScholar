@@ -24,8 +24,8 @@ triage:
   jev_model: jev-1.13.0      # pin a version; switch to jev-latest deliberately, then recalibrate
   concurrency: 8
   timeout_s: 20
-  # UNCALIBRATED placeholder. Run `paperbot label` + `paperbot calibrate` and replace.
-  relevance_threshold: 2.5   # on the 0-4 relevance ladder in profile.yaml
+  # Recalibrate (`paperbot label`, `paperbot calibrate`) after any rubric or jev_model change.
+  relevance_threshold: 2.25  # on the 0-4 ladder; calibrated 12 Oct 2026 (79 labels, rubric v2, budget-constrained)
   # A paper scoring within `rescue_margin` below the threshold still passes if any
   # "must_have" facet Noul is >= rescue_noul.
   rescue_margin: 0.5
@@ -34,6 +34,7 @@ triage:
 debate:
   enabled: true
   max_papers_per_run: 8      # hard budget cap on LLM spend per run (highest Jev score first)
+  overflow: skim             # passed papers over the cap: skim (list undebated in digest) | wait (queue)
   advocate_model: claude-sonnet-5-5
   skeptic_model: claude-sonnet-5-5
   judge_model: claude-opus-5-5
@@ -46,3 +47,6 @@ debate:
   pricing:
     claude-opus-5-5:   {input: 4.00, output: 20.00, cache_read: 0.20}
     claude-sonnet-5-5: {input: 2.00, output: 10.00, cache_read: 0.20}
+
+digest:
+  max_skim: 25               # "Also worth a look" list: top N skim papers by Jev score

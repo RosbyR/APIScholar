@@ -15,6 +15,9 @@ reader:
     - Traceability: linking defects or excursions back to root causes across process steps
     - Agentic / multi-agent LLM systems that act in industrial settings, with evaluation
     - Data-driven and mathematical modeling (dynamical systems, statistics, optimization)
+    - Physics-informed / scientific ML and prognostics (remaining useful life, degradation)
+    - General ML and agent methods worth knowing even without a manufacturing angle
+      (agent reliability and evaluation, continual learning, time-series models)
   not_interested:
     - Pure benchmark-chasing on generic NLP tasks with no industrial angle
     - Consumer recommender systems, ad tech, social media analytics
@@ -23,15 +26,18 @@ reader:
 # Jev Score: relevance ladder, level 0 is the bottom. Higher always means more relevant.
 # Put boundary cases in the wording of the levels, not in the instructions.
 relevance:
+  # v2 (12 Oct 2026), revised after 80 hand labels: general ML/agent methods moved up to
+  # level 2; defect/anomaly/root-cause work outside semiconductors moved down to level 1.
   instructions: >
-    How directly useful is this paper to a semiconductor process quality engineer
-    interested in agentic AI, data-driven modeling and traceability in manufacturing
+    How useful is this paper to an applied mathematician starting as a semiconductor
+    process quality engineer, who follows agentic AI, physics-informed and data-driven
+    modeling, and general ML methods
   levels:
-    - "Unrelated. No connection to manufacturing, industrial data, agentic AI, or quality."
-    - "Tangential. General ML, LLM or agent methods with no manufacturing or quality application, or manufacturing work with no data or AI component."
-    - "Adjacent. Applies ML, statistics or agents to manufacturing, quality or industrial operations outside semiconductors, or to semiconductors outside process quality."
-    - "Relevant. Data-driven or agentic methods for manufacturing quality, process control, root-cause analysis, or traceability that would transfer to a fab."
-    - "Core. Directly about semiconductor process quality, yield, excursion detection, or traceability using agentic AI or data-driven models on fab-like data."
+    - "Unrelated. No machine learning, statistics, optimization or AI-agent method content: e.g. clinical or social-science studies, policy essays, pure theory in unrelated fields."
+    - "Peripheral. ML or AI work aimed far from engineering (image or 3D generation, NLP benchmarks, AI policy or safety commentary, consumer applications), or defect detection, anomaly detection or root-cause analysis in industries other than semiconductors."
+    - "Methods of interest. General-purpose methods worth knowing, not yet applied to semiconductors: LLM agents and their reliability or evaluation, time-series and sequential models, continual or adaptive learning, uncertainty quantification, optimization and control."
+    - "Transferable. Physics-informed or scientific ML, prognostics (remaining useful life, degradation), or agentic AI systems that run manufacturing, applied to manufacturing or materials processes in a way that would plausibly carry over to a semiconductor fab."
+    - "Core. Directly about semiconductor process quality, yield, defects, excursion detection, metrology or traceability using data-driven or agentic methods."
 
 # Jev Nouls: independent topic flags. Several can be true at once.
 # must_have: true -> can rescue a paper scoring just under the threshold.

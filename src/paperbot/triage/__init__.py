@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from ..config import Config
-from ..models import STATUS_NEW, STATUS_PASSED, STATUS_REJECTED, STATUS_TRIAGE_ERROR
+from ..models import STATUS_NEW, STATUS_PASSED, STATUS_REJECTED, STATUS_SKIM, STATUS_TRIAGE_ERROR
 from ..store import Store, now_iso
 from .gate import decide
 from .jev import JevClient, JevError, JevFatalError
@@ -41,17 +41,18 @@ def _decide(t: dict, answers: dict, must: list[str]):
 
 
 def run_regate(cfg: Config, store: Store, dry_run: bool = False) -> RegateStats:
-    """Re-apply the gate to `rejected`/`passed` papers from stored jev_answers (no Jev calls).
+    """Re-apply the gate to `rejected`/`passed`/`skim` papers from stored jev_answers (no Jev calls).
 
     Use after changing relevance_threshold / rescue settings. Papers already debated or
-    digested are left alone. Answers from a different jev_model than the configured one are
-    still re-gated, but counted, because the threshold was calibrated for the configured model.
+    digested are left alone; a `skim` paper that still passes stays `skim`. Answers from a
+    different jev_model than the configured one are still re-gated, but counted, because the
+    threshold was calibrated for the configured model.
     """
     t = cfg.section("triage")
     must = must_have_keys(cfg.profile)
     pinned = t.get("jev_model")
     stats = RegateStats()
-    for row in store.by_status(STATUS_REJECTED, STATUS_PASSED):
+    for row in store.by_status(STATUS_REJECTED, STATUS_PASSED, STATUS_SKIM):
         if not row["jev_answers"]:
             continue
         stats.checked += 1
@@ -59,7 +60,7 @@ def run_regate(cfg: Config, store: Store, dry_run: bool = False) -> RegateStats:
             stats.model_mismatch += 1
         d = _decide(t, json.loads(row["jev_answers"]), must)
         new = STATUS_PASSED if d.passed else STATUS_REJECTED
-        if new == row["status"]:
+        if new == row["status"] or (d.passed and row["status"] == STATUS_SKIM):
             continue
         stats.changes.append((row["id"], row["status"], new, d.reason))
         if new == STATUS_PASSED:
@@ -83,11 +84,18 @@ def make_jev_client(cfg: Config) -> JevClient:
     )
 
 
-def run_triage(cfg: Config, store: Store, jev: JevClient, limit: int | None = None) -> TriageStats:
+def run_triage(cfg: Config, store: Store, jev: JevClient, limit: int | None = None,
+               rescore: bool = False) -> TriageStats:
+    """Score new and previously failed papers. With `rescore`, also re-score papers that
+    were already triaged but not yet debated (rejected/passed/skim) — use after changing
+    the rubric in profile.yaml or the jev_model, since stored answers are then stale."""
     t = cfg.section("triage")
     questions = build_questions(cfg.profile)
     must = must_have_keys(cfg.profile)
-    rows = store.by_status(STATUS_NEW, STATUS_TRIAGE_ERROR, limit=limit)
+    statuses = [STATUS_NEW, STATUS_TRIAGE_ERROR]
+    if rescore:
+        statuses += [STATUS_REJECTED, STATUS_PASSED, STATUS_SKIM]
+    rows = store.by_status(*statuses, limit=limit)
     stats = TriageStats()
     if not rows:
         return stats

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..config import Config
-from ..models import STATUS_ACCEPTED, STATUS_DEBATE_ERROR, STATUS_PASSED, STATUS_VETOED
+from ..models import STATUS_ACCEPTED, STATUS_DEBATE_ERROR, STATUS_PASSED, STATUS_SKIM, STATUS_VETOED
 from ..store import Store, now_iso
 from ..triage.questions import FACET_PREFIX
 from . import prompts
@@ -101,7 +101,8 @@ class DebateStats:
     accepted: int = 0
     vetoed: int = 0
     errors: int = 0
-    deferred: int = 0
+    deferred: int = 0         # over the cap and still queued (overflow=wait, or failed debates)
+    skimmed: int = 0          # over the cap and moved to the skim list (overflow=skim)
     input_tokens: int = 0     # including cache reads/writes
     output_tokens: int = 0
     cost_usd: float = 0.0
@@ -118,7 +119,15 @@ def run_debate(cfg: Config, store: Store, llm: LLM,
     models = {"advocate": d.get("advocate_model"), "skeptic": d.get("skeptic_model"), "judge": d.get("judge_model")}
     pricing = d.get("pricing") or {}
     queue = store.by_status(STATUS_PASSED, STATUS_DEBATE_ERROR, order="jev_score DESC")
-    stats.deferred = max(0, len(queue) - cap)
+    # Over the cap: with overflow=skim (default) passed papers go to the digest's skim list
+    # instead of queueing forever; with overflow=wait they stay `passed` for the next run.
+    # Failed debates always stay queued for retry.
+    for row in queue[cap:]:
+        if d.get("overflow", "skim") == "skim" and row["status"] == STATUS_PASSED:
+            store.update(row["id"], status=STATUS_SKIM)
+            stats.skimmed += 1
+        else:
+            stats.deferred += 1
     for row in queue[:cap]:
         paper = dict(row)
         calls: list[dict[str, Any]] = []
@@ -141,7 +150,7 @@ def run_debate(cfg: Config, store: Store, llm: LLM,
         stats.debated += 1
         stats.accepted += keep
         stats.vetoed += not keep
-    note = (f"vetoed={stats.vetoed} deferred={stats.deferred} in={stats.input_tokens} "
+    note = (f"vetoed={stats.vetoed} deferred={stats.deferred} skimmed={stats.skimmed} in={stats.input_tokens} "
             f"out={stats.output_tokens} cost_usd={stats.cost_usd:.4f}")
     if stats.unpriced_calls:
         note += f" unpriced_calls={stats.unpriced_calls}"

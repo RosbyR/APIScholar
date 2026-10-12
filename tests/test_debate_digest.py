@@ -9,7 +9,7 @@ from paperbot.debate import JudgeParseError, parse_judge, run_debate
 from paperbot.digest import build_digest
 from paperbot.fulltext import trim
 from paperbot.models import (STATUS_ACCEPTED, STATUS_DEBATE_ERROR, STATUS_DIGESTED, STATUS_PASSED,
-                             STATUS_VETOED, Paper)
+                             STATUS_SKIM, STATUS_VETOED, Paper)
 from paperbot.triage import run_triage
 
 
@@ -69,17 +69,34 @@ def test_judge_bad_json_retried(cfg, store):
     assert stats.accepted == 1
 
 
-def test_debate_budget_cap_and_error(cfg, store):
+def _boom(paper):
+    raise RuntimeError("pdf fetch exploded")
+
+
+def test_debate_budget_cap_and_error_overflow_wait(cfg, store):
     cfg.settings["debate"]["max_papers_per_run"] = 1
+    cfg.settings["debate"]["overflow"] = "wait"
     _scored(cfg, store, ["Wafer a", "Wafer b", "Wafer c"])
-
-    def boom(paper):
-        raise RuntimeError("pdf fetch exploded")
-
-    stats = run_debate(cfg, store, FakeLLM(), boom)
-    assert stats.errors == 1 and stats.deferred == 2
+    stats = run_debate(cfg, store, FakeLLM(), _boom)
+    assert stats.errors == 1 and stats.deferred == 2 and stats.skimmed == 0
     assert len(store.by_status(STATUS_DEBATE_ERROR)) == 1
     assert len(store.by_status(STATUS_PASSED)) == 2
+
+
+def test_debate_overflow_goes_to_skim_but_errors_stay_queued(cfg, store):
+    cfg.settings["debate"]["max_papers_per_run"] = 1
+    _scored(cfg, store, ["Wafer a", "Wafer b", "Wafer c"])
+    for i, sc in enumerate([3.9, 3.5, 3.4]):          # make the debate order deterministic
+        store.update(f"arxiv:2610.1000{i}", jev_score=sc)
+    run_debate(cfg, store, FakeLLM(), _boom)          # a errors, b and c skimmed
+    assert len(store.by_status(STATUS_SKIM)) == 2
+    store.update("arxiv:2610.10000", jev_score=0.1)  # the failed one now ranks last...
+    store.upsert(Paper(title="Wafer d", abstract="wafer fab", source="t", arxiv_id="2610.10009"))
+    run_triage(cfg, store, FakeJev())
+    stats = run_debate(cfg, store, FakeLLM(), abstract_only)
+    # ...so the new paper takes the one slot, and the over-cap failed debate is kept for retry, not skimmed
+    assert (stats.debated, stats.skimmed, stats.deferred) == (1, 0, 1)
+    assert store.get("arxiv:2610.10000")["status"] == STATUS_DEBATE_ERROR
 
 
 def test_digest(cfg, store, tmp_path):
@@ -99,6 +116,30 @@ def test_digest(cfg, store, tmp_path):
     assert "Nothing new" in md2
 
 
+def test_digest_skim_list(cfg, store, tmp_path):
+    cfg.settings["debate"]["max_papers_per_run"] = 1
+    _scored(cfg, store, ["Wafer a", "Wafer b", "Wafer c", "Wafer d"])
+    for i, sc in enumerate([3.9, 3.0, 2.8, 2.6]):
+        store.update(f"arxiv:2610.1000{i}", jev_score=sc)
+    run_debate(cfg, store, FakeLLM(), abstract_only)   # a debated; b, c, d skimmed
+    md = build_digest(store, tmp_path / "d", today=date(2026, 10, 8), since_iso="2000-01-01",
+                      max_skim=2).read_text(encoding="utf-8")
+    skim = md.split("## Also worth a look")[1].split("## Pipeline health")[0]
+    assert "Wafer b" in skim and "Wafer c" in skim and "Wafer d" not in skim
+    assert skim.index("Wafer b") < skim.index("Wafer c")          # ranked by score
+    assert "+1 more below these scores" in skim and "Jev 2.80" in skim
+    assert "paperbot feedback arxiv:2610.10001 up" in skim
+    # every skim paper is marked delivered, shown or not, so the list can't pile up
+    assert len(store.by_status(STATUS_SKIM)) == 0
+    assert store.get("arxiv:2610.10003")["status"] == STATUS_DIGESTED
+
+
+def test_first_sentence():
+    from paperbot.digest import _first_sentence
+    assert _first_sentence("We do X.  Then  Y. More.") == "We do X."
+    assert _first_sentence("no period " * 40).endswith("…")
+
+
 def test_feedback_becomes_label(cfg, store):
     _scored(cfg, store, ["Wafer agents"])
     store.add_feedback("arxiv:2610.10000", -1, "too theoretical")
@@ -114,6 +155,41 @@ def test_calibration_sweep():
     assert best.recall == 1.0 and best.threshold == 2.5
     at0 = rows[0]
     assert at0.pass_rate == 1.0 and at0.recall == 1.0
+
+
+def test_calibration_reweights_stratified_labels():
+    # 1000 papers: 990 in bucket 0, 10 in bucket 3. Labels: 10 from each bucket (stratified).
+    population = [0.5] * 990 + [3.5] * 10
+    labeled = [(0.5, 1)] * 2 + [(0.5, 0)] * 8 + [(3.5, 1)] * 10
+    unweighted = {r.threshold: r for r in sweep(labeled, max_score=4.0)}
+    weighted = {r.threshold: r for r in sweep(labeled, max_score=4.0, population=population)}
+    # unweighted: threshold 3.5 looks like it catches 10 of 12 relevant
+    assert unweighted[3.5].recall == pytest.approx(10 / 12)
+    # weighted: bucket 0 really holds ~198 relevant papers, so 3.5 catches 10 of ~208
+    assert weighted[3.5].recall == pytest.approx(10 / (10 + 2 * 99))
+    assert weighted[3.5].passes == 10 and weighted[3.5].pass_rate == pytest.approx(0.01)
+    assert weighted[0.0].passes == 1000
+
+
+def test_suggest_respects_pass_budget():
+    population = [0.5] * 990 + [3.5] * 10
+    labeled = [(0.5, 1)] * 2 + [(0.5, 0)] * 8 + [(3.5, 1)] * 10
+    rows = sweep(labeled, max_score=4.0, population=population)
+    assert suggest(rows).threshold < 1.0                    # unconstrained F2 wants everything
+    assert suggest(rows, max_passes=50).threshold == 3.5    # only the top bucket fits the budget
+    assert suggest(rows, max_passes=0).threshold == 4.0     # nothing fits: strictest threshold
+
+
+def test_weekdays_between():
+    from paperbot.calibrate import weekdays_between
+    assert weekdays_between(date(2026, 10, 3), date(2026, 10, 10)) == 5   # Sat..Sat
+    assert weekdays_between(date(2026, 10, 5), date(2026, 10, 5)) == 1
+
+
+def test_stratum_weights_reports_unlabeled_buckets():
+    from paperbot.calibrate import stratum_weights
+    w, uncovered = stratum_weights([(0.2, 0), (0.4, 1)], [0.1, 0.2, 0.3, 0.4, 2.5])
+    assert w == {0: 2.0} and uncovered == [2]
 
 
 def test_label_sampling_is_stratified():

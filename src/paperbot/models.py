@@ -12,6 +12,7 @@ STATUS_NEW = "new"                    # harvested, not yet scored
 STATUS_TRIAGE_ERROR = "triage_error"  # Jev failed after retries (fail open: retried next run, counted in digest)
 STATUS_REJECTED = "rejected"          # below threshold
 STATUS_PASSED = "passed"              # above threshold, waiting for debate
+STATUS_SKIM = "skim"                  # passed, but over the debate cap: listed in the digest without a debate
 STATUS_DEBATE_ERROR = "debate_error"  # LLM failure; retried next run
 STATUS_VETOED = "vetoed"              # judge said not worth reading
 STATUS_ACCEPTED = "accepted"          # judge kept it; goes in next digest

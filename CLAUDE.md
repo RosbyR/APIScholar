@@ -30,7 +30,9 @@ text generation); Claude = all writing (debate, judge); everything else = plain 
 
 ### Paper status lifecycle (`papers.status`)
 
-`new → (triage) → passed | rejected | triage_error → (debate) → accepted | vetoed | debate_error → (digest) → digested`
+`new → (triage) → passed | rejected | triage_error → (debate) → accepted | vetoed | debate_error | skim → (digest) → digested`
+
+(`skim` = passed but over the debate cap; listed in the digest without a debate.)
 
 - `triage_error` and `debate_error` are **retried automatically** on the next run (fail open:
   nothing is silently dropped; counts appear in the digest's health section).
@@ -42,7 +44,7 @@ text generation); Claude = all writing (debate, judge); everything else = plain 
 ## 2. Status: what is done and how sure we are
 
 Built in a sandbox that **could not reach arXiv, OpenAlex, TypeSafe or Anthropic**. Everything
-below is implemented and covered by offline tests (`pytest`: 41 passing, mocked HTTP via
+below is implemented and covered by offline tests (`pytest`: 52 passing, mocked HTTP via
 `respx`, fake Jev and fake LLM in `tests/conftest.py`). An offline end-to-end run through the
 CLI (seed → triage → debate → digest → feedback → calibrate → label) also worked.
 
@@ -104,6 +106,7 @@ Also set `PAPERBOT_CONTACT_EMAIL` in `.env` (goes into the User-Agent for arXiv;
 paperbot harvest            # all enabled sources, since watermark − overlap
 paperbot backfill --days 7  # arXiv query API, one-off history pull
 paperbot triage [--limit N] # Jev-score new + previously failed papers, then gate
+paperbot triage --rescore   # also re-score triaged-but-undebated papers (after a rubric/model change)
 paperbot regate [--dry-run] # re-apply the gate to rejected/passed papers from stored answers (no Jev calls)
 paperbot debate             # debate up to debate.max_papers_per_run passed papers (highest score first)
 paperbot digest             # write digests/YYYY-MM-DD.md, mark papers digested
@@ -136,11 +139,16 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
   calibrated on hand labels and why the judge has veto power.
 
 **Gate**
-- `relevance_threshold` (default 2.5 on 0–4) is an **uncalibrated placeholder**.
+- `relevance_threshold` is **2.25** (calibrated 12 Oct 2026 on 79 labels against rubric v2;
+  see §6 step 3 for the caveats).
 - Rescue rule: a paper within `rescue_margin` below the threshold passes if any `must_have`
   facet Noul ≥ `rescue_noul`. Keeps core-topic papers with conservative scores.
-- Calibration objective is **F2** (recall weighted over precision): missing a relevant paper
-  costs more than one extra debate.
+- Calibration objective is **F2** (recall weighted over precision), **subject to the volume
+  budget**: the suggestion only considers thresholds passing ≤ (debate cap + `digest.max_skim`)
+  papers per weekday run. Unconstrained F2 picked thresholds passing ~70% of all papers.
+- `paperbot label` samples evenly per integer score bucket, so labels over-represent high scores
+  ~30–50x. `calibrate` reweights each label by (papers in bucket / labels in bucket) and takes
+  pass counts from all scored papers. Unweighted numbers were badly misleading (fixed 12 Oct).
 
 **Harvest**
 - Lean toward recall; Jev is cheap ($0.042 per 1M input tokens, output free) and handles precision.
@@ -161,8 +169,11 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
   `prompts.JUDGE_SYSTEM`; parsed/validated by `parse_judge`, one retry on bad JSON).
 - Paper text is **untrusted** (prompt injection via PDFs is realistic): it is fenced in
   `<paper>` tags and every system prompt says to treat it as data.
-- Budget cap `debate.max_papers_per_run` (default 8), highest Jev score first; overflow waits
-  in `passed` and is reported in the digest.
+- Budget cap `debate.max_papers_per_run` (default 8), highest Jev score first. Overflow
+  (`debate.overflow: skim`, default) moves to status `skim` and is listed undebated in the
+  digest's "Also worth a look" section (top `digest.max_skim` by score; all are marked digested,
+  with a "+N more" count). `overflow: wait` restores the old queue-forever behaviour. Failed
+  debates over the cap always stay `debate_error` for retry.
 - Models: advocate/skeptic `claude-sonnet-5-5`, judge `claude-opus-5-5` (configurable).
 - `max_tokens` is 16000: thinking is always on for Opus 5.5 and counts against it (1500 risked truncated judge JSON).
 - Requests use the server-side refusal fallback (`fallbacks="default"`, beta `server-side-fallback-2026-07-01`).
@@ -197,9 +208,20 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
    fixtures (`*_live.xml`). OpenAlex syntax works, ~$0.001/request. Backfill 7d: 3,253 fetched,
    2,701 unique, ~2 min. Still worth one weekday `paperbot harvest` to see all five feeds populated.
 2. ~~Live Jev check~~ — done: answer shapes match `jev.py` exactly; ~1,000 input tokens/paper.
-3. **Calibrate:** `paperbot triage` on the backfill, `paperbot label --n 80`, `paperbot calibrate`,
-   update `relevance_threshold`. Expect to iterate on the rubric wording in `profile.yaml`
-   (boundary cases belong in level wording, not instructions).
+3. **Calibrate** — first pass done 12 Oct 2026. Findings:
+   - Roz's "relevant" includes general ML/agent methods (agent reliability, continual learning,
+     time-series models) and physics-informed ML / RUL prognostics, but **not** defect / anomaly /
+     root-cause work outside semiconductors. Rubric v1 encoded the opposite at levels 1 and 3, so
+     no threshold worked. Rubric v2 in `profile.yaml` fixes the ordering; v1 scores are kept in
+     `data/paperbot-rubric-v1.sqlite`.
+   - With v2: semiconductor core papers score ≥3.9 (all labeled relevant); level 3 ("Transferable")
+     is ~50/50; the general-methods band (~1.8–2.4) mixes relevant and not ~1:2 and Jev can't
+     separate them. That part is taste, not topic: expect low recall there, and rely on
+     `paperbot feedback` thumbs to grow labels.
+   - **Caveat:** v2 wording was written while looking at these same 79 labels, so the estimates
+     are optimistic. Next: `paperbot label --n 40` on a fresh week (sampler skips labeled papers)
+     and recalibrate as a held-out check.
+   - After any rubric edit: `paperbot triage --rescore` (~$0.12/week of papers), then `calibrate`.
 4. ~~Re-gate command~~ — done: `paperbot regate [--dry-run]` after every threshold change.
 5. **Debate on real papers:** run `paperbot debate` with the cap at 2–3, read the transcripts
    (`paperbot show`), tune prompts. Check the judge actually vetoes weak papers and that

@@ -10,9 +10,9 @@ import argparse
 import json
 import logging
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
-from .calibrate import format_table, sample_for_labeling, suggest, sweep
+from .calibrate import format_table, sample_for_labeling, stratum_weights, suggest, sweep, weekdays_between
 from .config import Config, load_config
 from .store import Store
 
@@ -51,7 +51,8 @@ def cmd_backfill(cfg: Config, args) -> int:
 
 def cmd_triage(cfg: Config, args) -> int:
     from .triage import make_jev_client, run_triage
-    stats = run_triage(cfg, _store(cfg), make_jev_client(cfg), limit=args.limit)
+    stats = run_triage(cfg, _store(cfg), make_jev_client(cfg), limit=args.limit,
+                       rescore=getattr(args, "rescore", False))
     print(stats)
     return 0
 
@@ -92,7 +93,8 @@ def cmd_debate(cfg: Config, args) -> int:
 def cmd_digest(cfg: Config, args) -> int:
     from .digest import build_digest
     store = _store(cfg)
-    path = build_digest(store, cfg.digest_dir, since_iso=_last_digest_iso(store))
+    path = build_digest(store, cfg.digest_dir, since_iso=_last_digest_iso(store),
+                        max_skim=int(cfg.section("digest").get("max_skim", 25)))
     print(path)
     return 0
 
@@ -201,13 +203,28 @@ def cmd_calibrate(cfg: Config, args) -> int:
         if not labeled or not pos:
             return 1
     max_score = len(cfg.profile["relevance"]["levels"]) - 1
-    rows = sweep(labeled, beta=args.beta, max_score=max_score)
-    best = suggest(rows)
+    population = [r[0] for r in store.conn.execute("SELECT jev_score FROM papers WHERE jev_score IS NOT NULL")]
+    weights, uncovered = stratum_weights(labeled, population, max_score)
+    if uncovered:
+        print(f"warning: score bucket(s) {uncovered} have papers but no labels; estimates ignore them. "
+              "Run `paperbot label` again.")
+    rows = sweep(labeled, beta=args.beta, max_score=max_score, population=population)
+    span = store.conn.execute("SELECT MIN(published), MAX(published) FROM papers WHERE jev_score IS NOT NULL").fetchone()
+    runs = max(1, weekdays_between(date.fromisoformat(span[0][:10]), date.fromisoformat(span[1][:10])))
+    per_run = int(cfg.section("debate").get("max_papers_per_run", 8)) + int(cfg.section("digest").get("max_skim", 25))
+    best_any, best = suggest(rows), suggest(rows, max_passes=per_run * runs)
+    print(f"{len(labeled)} labels ({pos} relevant), reweighted to {len(population)} scored papers "
+          f"published {span[0]}..{span[1]} (~{runs} weekday runs). Bucket weights: "
+          + ", ".join(f"{b}:{w:.1f}" for b, w in sorted(weights.items())) + "\n")
     print(format_table(rows, best))
+    print(f"\nBudget: {per_run} papers per run (debate cap + skim list) = {per_run * runs} over this window.")
+    if best_any is not best:
+        print(f"Unconstrained F{args.beta:g} optimum is {best_any.threshold}, but it would pass "
+              f"{best_any.passes} papers (~{best_any.passes // runs}/run), far over budget.")
     current = cfg.section("triage").get("relevance_threshold")
     print(f"\nCurrent threshold: {current}. Suggested: {best.threshold} "
-          f"(recall {best.recall:.0%}, precision {best.precision:.0%}). "
-          "Edit triage.relevance_threshold in config/settings.yaml to apply.")
+          f"(est. recall {best.recall:.0%}, precision {best.precision:.0%}, ~{best.passes // runs} papers/run). "
+          "Edit triage.relevance_threshold in config/settings.yaml, then `paperbot regate`.")
     return 0
 
 
@@ -225,7 +242,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("harvest").set_defaults(fn=cmd_harvest)
     b = sub.add_parser("backfill"); b.add_argument("--days", type=int, default=7); b.set_defaults(fn=cmd_backfill)
-    t = sub.add_parser("triage"); t.add_argument("--limit", type=int); t.set_defaults(fn=cmd_triage)
+    t = sub.add_parser("triage"); t.add_argument("--limit", type=int)
+    t.add_argument("--rescore", action="store_true",
+                   help="also re-score already-triaged, undebated papers (after a rubric/model change)")
+    t.set_defaults(fn=cmd_triage)
     g = sub.add_parser("regate", help="re-apply the gate from stored Jev answers after a threshold change")
     g.add_argument("--dry-run", action="store_true"); g.set_defaults(fn=cmd_regate)
     sub.add_parser("debate").set_defaults(fn=cmd_debate)
