@@ -112,7 +112,14 @@ def build_digest(store: Store, digest_dir: Path, today: date | None = None,
         parts.append("")
     parts += ["---", "## Pipeline health", *_health(store, since_iso, today), ""]
     digest_dir.mkdir(parents=True, exist_ok=True)
-    path = digest_dir / f"{today.isoformat()}.md"
+    # A second digest on the same day must not overwrite the first: its papers are
+    # already marked digested, so they would be lost. Number later ones instead.
+    path, n = digest_dir / f"{today.isoformat()}.md", 1
+    while path.exists():
+        n += 1
+        path = digest_dir / f"{today.isoformat()}-{n}.md"
+    if n > 1:
+        parts[0] += f" (#{n})"
     path.write_text("\n".join(parts), encoding="utf-8")
     for r in [*rows, *skims]:
         store.update(r["id"], status=STATUS_DIGESTED, digest_date=today.isoformat())

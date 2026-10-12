@@ -20,11 +20,12 @@ Global options go **before** the command: `paperbot -v harvest` (verbose logging
 
 | Command | What it does | Costs |
 |---|---|---|
-| `paperbot run` | Everything below in order: harvest → triage → debate → digest. Each stage still runs if an earlier one fails. Exits with code 2 if another run is already going. | ~$1–2 |
+| `paperbot run` | Everything below in order: harvest → triage → debate → digest → deliver. Each stage still runs if an earlier one fails. Exits with code 2 if another run is already going. | ~$1–2 |
 | `paperbot harvest` | Pulls new papers from the arXiv feeds and OpenAlex since the last run. | ~$0.02 |
 | `paperbot triage` | Scores new papers with Jev and applies the threshold. | ~$0.02/day |
 | `paperbot debate` | Debates the top 8 passing papers (advocate, skeptic, judge). Passing papers over the cap go to the skim list. | ~$0.25/paper |
-| `paperbot digest` | Writes `digests\YYYY-MM-DD.md` with the debated papers, the skim list and a health section. | free |
+| `paperbot digest` | Writes `digests\YYYY-MM-DD.md` with the debated papers, the skim list and a health section. A second digest on the same day becomes `YYYY-MM-DD-2.md`. | free |
+| `paperbot deliver` | Pushes the newest digest to OneNote (**AI Agents › Paper Digests**), which syncs it to your iPad. Never pushes the same digest twice. | free |
 
 ## Checking on things
 
@@ -66,6 +67,8 @@ Paper ids look like `arxiv:2610.09993` or `doi:10.1145/3843282.3844428`. Each di
 |---|---|
 | `paperbot backfill --days 7` | Pulls the last N days of arXiv history, for seeding after a gap. |
 | `paperbot triage --limit 20` | Scores only 20 papers. Good for a quick check after changing something. |
+| `paperbot deliver --file digests6-10-12.md` | Delivers a specific digest instead of the newest. |
+| `paperbot deliver --force` | Pushes again even if already delivered (e.g. you deleted the page). |
 | `paperbot debate --id <id> --id <id>` | Debates exactly these papers and leaves the rest of the queue alone. Good for testing prompts. |
 | `paperbot <command> --help` | Built-in help for any command. |
 
@@ -91,6 +94,7 @@ Each scheduled run appends to `logs\YYYY-MM-DD.log`. Only the last 60 logs are k
 | `debate.max_papers_per_run` | 8 | Debates per run. Cost scales directly with this. |
 | `debate.overflow` | `skim` | Passing papers over the cap go to the skim list. `wait` keeps them queued instead. |
 | `digest.max_skim` | 25 | How many skim papers the digest shows. |
+| `deliver.onenote.enabled` / `notebook` / `section` | on / AI Agents / Paper Digests | Where `deliver` puts the page. The notebook must be open in OneNote desktop; the section is created if missing. |
 | `debate.advocate_model` / `skeptic_model` / `judge_model` | Sonnet / Sonnet / Opus | Models for each role. Add any new model's price under `debate.pricing`. |
 
 **`config\profile.yaml`** holds your interests:
@@ -133,5 +137,6 @@ python -m pytest -q   # offline, never touches the network or spends money
 
 - **"skipping: another run holds data\paperbot.lock"**: a run is already going. A lock left by a crash is ignored after 6 hours. If you're sure nothing is running, delete `data\paperbot.lock`.
 - **"Environment variable … is not set"**: a key is missing from `.env`.
+- **OneNote delivery failed** (shown in the digest run output and `paperbot status`): check that the OneNote desktop app is installed, that the notebook is open in it, and that you're logged in to Windows (scheduled runs need your session). Then run `paperbot deliver` again.
 - **arXiv returned 0 items on a weekend**: normal. Most arXiv feeds are empty on Saturday and Sunday.
 - **The digest health section warns about errors**: run `paperbot status` and `paperbot show <id>` on a failed paper. Its `error` field has the reason.

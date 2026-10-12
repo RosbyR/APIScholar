@@ -11,6 +11,7 @@ import json
 import logging
 import sys
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from .calibrate import format_table, sample_for_labeling, stratum_weights, suggest, sweep, weekdays_between
 from .config import Config, load_config
@@ -90,13 +91,44 @@ def cmd_debate(cfg: Config, args) -> int:
     return 1 if stats.errors else 0
 
 
-def cmd_digest(cfg: Config, args) -> int:
+def _write_digest(cfg: Config):
     from .digest import build_digest
     store = _store(cfg)
-    path = build_digest(store, cfg.digest_dir, since_iso=_last_digest_iso(store),
+    return build_digest(store, cfg.digest_dir, since_iso=_last_digest_iso(store),
                         max_skim=int(cfg.section("digest").get("max_skim", 25)))
-    print(path)
+
+
+def cmd_digest(cfg: Config, args) -> int:
+    print(_write_digest(cfg))
     return 0
+
+
+def _deliver(cfg: Config, path, force: bool = False) -> int:
+    from .deliver import run_deliver
+    stats = run_deliver(cfg, _store(cfg), path, force=force)
+    for line in stats.delivered:
+        print(f"delivered -> {line}")
+    for line in stats.skipped:
+        print(f"skipped: {line}")
+    for line in stats.errors:
+        print(f"ERROR {line}", file=sys.stderr)
+    return 1 if stats.errors else 0
+
+
+def cmd_deliver(cfg: Config, args) -> int:
+    """Deliver a digest file (default: the newest one in digests/)."""
+    if args.file:
+        path = Path(args.file)
+    else:
+        found = sorted(cfg.digest_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
+        if not found:
+            print("No digests yet. Run `paperbot digest` first.", file=sys.stderr)
+            return 1
+        path = found[-1]
+    if not path.is_file():
+        print(f"no such digest: {path}", file=sys.stderr)
+        return 1
+    return _deliver(cfg, path, force=args.force)
 
 
 def cmd_run(cfg: Config, args) -> int:
@@ -125,7 +157,14 @@ def _run_stages(cfg: Config, args) -> int:
             log.exception("stage %s failed", name)
             _store(cfg).log_run(f"{name}:failed", errors=1, note=repr(e)[:500])
             rc = 1
-    rc |= cmd_digest(cfg, args)
+    path = _write_digest(cfg)
+    print(path)
+    try:
+        rc |= _deliver(cfg, path)
+    except Exception as e:  # delivery must never lose the digest; the file is already written
+        log.exception("stage deliver failed")
+        _store(cfg).log_run("deliver:failed", errors=1, note=repr(e)[:500])
+        rc = 1
     return rc
 
 
@@ -253,6 +292,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="debate this paper id only (repeatable); the rest of the queue is untouched")
     db.set_defaults(fn=cmd_debate)
     sub.add_parser("digest").set_defaults(fn=cmd_digest)
+    dv = sub.add_parser("deliver", help="push a digest to the channels in settings.yaml (OneNote)")
+    dv.add_argument("--file", help="digest file to deliver (default: newest in digests/)")
+    dv.add_argument("--force", action="store_true", help="deliver again even if already delivered")
+    dv.set_defaults(fn=cmd_deliver)
     r = sub.add_parser("run"); r.set_defaults(fn=cmd_run, limit=None)
     sub.add_parser("status").set_defaults(fn=cmd_status)
     co = sub.add_parser("costs", help="Claude token usage and spend per day/model")

@@ -24,5 +24,8 @@ paperbot = "paperbot.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"paperbot.deliver" = ["*.ps1"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

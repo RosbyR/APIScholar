@@ -44,7 +44,7 @@ text generation); Claude = all writing (debate, judge); everything else = plain 
 ## 2. Status: what is done and how sure we are
 
 Built in a sandbox that **could not reach arXiv, OpenAlex, TypeSafe or Anthropic**. Everything
-below is implemented and covered by offline tests (`pytest`: 52 passing, mocked HTTP via
+below is implemented and covered by offline tests (`pytest`: 60 passing, mocked HTTP via
 `respx`, fake Jev and fake LLM in `tests/conftest.py`). An offline end-to-end run through the
 CLI (seed → triage → debate → digest → feedback → calibrate → label) also worked.
 
@@ -72,8 +72,9 @@ CLI (seed → triage → debate → digest → feedback → calibrate → label)
 | Refusal fallback + refusal/max_tokens handling | `debate/llm.py` | yes (fake client) | **no** |
 | Run lock, `.env` loading | `lock.py`, `config.py` | yes | n/a |
 | Windows Task Scheduler scripts | `scripts/*.ps1` | parse-checked only | **not registered yet** |
+| OneNote delivery (`paperbot deliver`) | `deliver/`, `deliver/onenote_push.ps1` | yes (fake push) | yes — page created in AI Agents › Paper Digests (12 Oct 2026) |
 
-**Not built yet:** digest delivery (email/Slack/etc.), Semantic Scholar adapter, journal RSS adapter,
+**Not built yet:** Semantic Scholar adapter, journal RSS adapter,
 prompt caching for the debate (see §6 step 5).
 
 ---
@@ -183,6 +184,19 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 - Full text: arXiv PDF via `pdf_url`, references section trimmed, capped at 60k chars;
   falls back to abstract and says so in the prompt and digest ("based on abstract only").
 
+**Delivery**
+- `paperbot deliver` (also the last stage of `run`) writes the digest as a page in the **OneNote
+  desktop app** through its COM API (`OneNote.Application`, 2013 page schema). OneNote's own sync
+  carries it to the iPad. Python converts Markdown → page XML (`deliver/onenote.py`, testable);
+  `deliver/onenote_push.ps1` does the COM calls (PowerShell's COM [out]-param handling is reliable;
+  pywin32's is flaky with OneNote).
+- Not Microsoft Graph: OneNote app-only auth was retired 31 Mar 2025, delegated auth needs an Entra
+  app registration, and Roz's notebook is on the colorado.edu tenant (user consent likely blocked).
+  me@onenote.com email-to-OneNote was also retired (Mar 2025).
+- Each (digest file, channel) is delivered once (`deliveries` table); `--force` re-pushes.
+  Requires Windows, OneNote desktop installed, the notebook open, and a logged-in session.
+- A second digest on the same day is written as `YYYY-MM-DD-2.md` (it used to overwrite the first).
+
 ---
 
 ## 5. External API facts (checked October 2026 — re-verify if something breaks)
@@ -233,8 +247,7 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
    registers a weekday 06:00 (local) Task Scheduler job that runs `scripts\run-daily.ps1`
    (logs in `logs/`). Register it only after the live smoke tests pass and `.env` has keys.
    (On macOS use launchd; alternative: GitHub Actions cron with the DB persisted as an artifact.)
-7. **Delivery:** decide with Roz (email, Slack, Notion, or just the Markdown file). Keep it a
-   separate stage after `digest`.
+7. ~~Delivery~~ — done: OneNote desktop via COM (see §4 Delivery). Roz reads on iPad via OneNote sync.
 8. Optional sources: Semantic Scholar (citation watches), journal RSS (IEEE TSM, J. Manuf. Systems).
 
 ## 7. Open decisions for Roz

@@ -50,3 +50,9 @@ debate:
 
 digest:
   max_skim: 25               # "Also worth a look" list: top N skim papers by Jev score
+
+deliver:
+  onenote:                   # Windows only: writes a page via the OneNote desktop app, which syncs it
+    enabled: true
+    notebook: "AI Agents"    # must already be open in OneNote desktop
+    section: "Paper Digests" # created if missing; one page per digest

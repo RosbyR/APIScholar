@@ -91,6 +91,14 @@ CREATE TABLE IF NOT EXISTS llm_calls (        -- one row per Claude request, for
     cost_usd      REAL                        -- NULL if the model had no price in settings
 );
 CREATE INDEX IF NOT EXISTS idx_llm_calls_at ON llm_calls(at);
+
+CREATE TABLE IF NOT EXISTS deliveries (       -- each digest file is pushed to each channel once
+    digest     TEXT NOT NULL,                 -- digest file name, e.g. 2026-10-12.md
+    channel    TEXT NOT NULL,                 -- e.g. onenote
+    ref        TEXT,                          -- channel-side id (OneNote page id)
+    at         TEXT NOT NULL,
+    PRIMARY KEY (digest, channel)
+);
 """
 
 
@@ -244,6 +252,19 @@ class Store:
                       SUM(input_tokens + cache_read_tokens + cache_write_tokens) AS input_tokens,
                       SUM(output_tokens) AS output_tokens, COALESCE(SUM(cost_usd), 0) AS cost_usd
                FROM llm_calls WHERE at >= ? GROUP BY day, model ORDER BY day, model""", (ts,)))
+
+    # ---- deliveries ----------------------------------------------------------------
+    def delivered(self, digest: str, channel: str) -> bool:
+        return self.conn.execute("SELECT 1 FROM deliveries WHERE digest=? AND channel=?",
+                                 (digest, channel)).fetchone() is not None
+
+    def record_delivery(self, digest: str, channel: str, ref: str | None) -> None:
+        with self.tx() as c:
+            c.execute(
+                "INSERT INTO deliveries(digest, channel, ref, at) VALUES(?,?,?,?) "
+                "ON CONFLICT(digest, channel) DO UPDATE SET ref=excluded.ref, at=excluded.at",
+                (digest, channel, ref, now_iso()),
+            )
 
     # ---- labels / feedback -----------------------------------------------------
     def add_label(self, paper_id: str, relevant: bool) -> None:
