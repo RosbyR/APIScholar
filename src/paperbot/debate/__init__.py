@@ -110,7 +110,9 @@ class DebateStats:
 
 
 def run_debate(cfg: Config, store: Store, llm: LLM,
-               get_text: Callable[[dict], tuple[str, str]]) -> DebateStats:
+               get_text: Callable[[dict], tuple[str, str]], ids: list[str] | None = None) -> DebateStats:
+    """Debate the top `max_papers_per_run` queued papers. With `ids`, debate exactly those
+    papers (if they are passed/debate_error) and leave the rest of the queue untouched."""
     d = cfg.section("debate")
     stats = DebateStats()
     if not d.get("enabled", True):
@@ -118,7 +120,15 @@ def run_debate(cfg: Config, store: Store, llm: LLM,
     cap = int(d.get("max_papers_per_run", 8))
     models = {"advocate": d.get("advocate_model"), "skeptic": d.get("skeptic_model"), "judge": d.get("judge_model")}
     pricing = d.get("pricing") or {}
-    queue = store.by_status(STATUS_PASSED, STATUS_DEBATE_ERROR, order="jev_score DESC")
+    if ids:
+        rows = [store.get(i) for i in ids]
+        for i, r in zip(ids, rows):
+            if r is None or r["status"] not in (STATUS_PASSED, STATUS_DEBATE_ERROR):
+                log.warning("skipping %s: %s", i, "no such paper" if r is None else f"status is {r['status']}")
+        queue = [r for r in rows if r is not None and r["status"] in (STATUS_PASSED, STATUS_DEBATE_ERROR)]
+        cap = len(queue)
+    else:
+        queue = store.by_status(STATUS_PASSED, STATUS_DEBATE_ERROR, order="jev_score DESC")
     # Over the cap: with overflow=skim (default) passed papers go to the digest's skim list
     # instead of queueing forever; with overflow=wait they stay `passed` for the next run.
     # Failed debates always stay queued for retry.

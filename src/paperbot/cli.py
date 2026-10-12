@@ -85,7 +85,7 @@ def cmd_debate(cfg: Config, args) -> int:
     from .debate import run_debate
     from .debate.llm import AnthropicLLM
     Config.env("ANTHROPIC_API_KEY", required=True)
-    stats = run_debate(cfg, _store(cfg), AnthropicLLM(), _text_getter(cfg))
+    stats = run_debate(cfg, _store(cfg), AnthropicLLM(), _text_getter(cfg), ids=getattr(args, "ids", None))
     print(stats)
     return 1 if stats.errors else 0
 
@@ -248,7 +248,10 @@ def main(argv: list[str] | None = None) -> int:
     t.set_defaults(fn=cmd_triage)
     g = sub.add_parser("regate", help="re-apply the gate from stored Jev answers after a threshold change")
     g.add_argument("--dry-run", action="store_true"); g.set_defaults(fn=cmd_regate)
-    sub.add_parser("debate").set_defaults(fn=cmd_debate)
+    db = sub.add_parser("debate")
+    db.add_argument("--id", dest="ids", action="append",
+                    help="debate this paper id only (repeatable); the rest of the queue is untouched")
+    db.set_defaults(fn=cmd_debate)
     sub.add_parser("digest").set_defaults(fn=cmd_digest)
     r = sub.add_parser("run"); r.set_defaults(fn=cmd_run, limit=None)
     sub.add_parser("status").set_defaults(fn=cmd_status)

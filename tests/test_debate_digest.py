@@ -116,6 +116,16 @@ def test_digest(cfg, store, tmp_path):
     assert "Nothing new" in md2
 
 
+def test_debate_selected_ids_leaves_queue_alone(cfg, store):
+    cfg.settings["debate"]["max_papers_per_run"] = 1
+    _scored(cfg, store, ["Wafer a", "Wafer b", "Wafer c"])
+    stats = run_debate(cfg, store, FakeLLM(), abstract_only,
+                       ids=["arxiv:2610.10001", "arxiv:2610.10002", "nope"])
+    assert stats.debated == 2 and stats.skimmed == 0     # explicit ids ignore the cap
+    assert store.get("arxiv:2610.10000")["status"] == STATUS_PASSED   # not skimmed, not debated
+    assert run_debate(cfg, store, FakeLLM(), abstract_only, ids=["arxiv:2610.10001"]).debated == 0  # already debated
+
+
 def test_digest_skim_list(cfg, store, tmp_path):
     cfg.settings["debate"]["max_papers_per_run"] = 1
     _scored(cfg, store, ["Wafer a", "Wafer b", "Wafer c", "Wafer d"])
