@@ -51,4 +51,13 @@ document.addEventListener("click", async (e) => {
   }
 });
 
+// Buttons that start paid work (Jev, Claude) ask first.
+document.addEventListener("submit", (e) => {
+  const msg = e.target.dataset.confirm;
+  if (msg && !confirm(msg)) e.preventDefault();
+});
+
+// While a background job runs, the status box asks for a refresh every few seconds.
+if (document.querySelector("[data-poll]")) setTimeout(() => location.reload(), 4000);
+
 load();

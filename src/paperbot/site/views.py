@@ -223,6 +223,7 @@ def bank_page(ctx: Ctx, params: dict[str, str]) -> tuple[str, str]:
         f"<span>Page {page} of {pages} · {total:,} paper{'' if total == 1 else 's'}</span>") + (
         f'<a href="bank{q(**keep, page=page + 1)}">Next →</a>' if page < pages else "<span></span>") + "</nav>"
     body = f"""<h1>Jev bank</h1>
+<!--actions-->
 <p class="lead">{scored:,} papers scored by Jev ({e(ctx.cfg.section("triage").get("jev_model", ""))}). Threshold
 {ctx.threshold}: green scores pass the gate. Facet chips are topic flags Jev rated ≥ 0.5.</p>
 <div class="hist">{bars}</div>
@@ -257,9 +258,12 @@ def queue_page(ctx: Ctx) -> tuple[str, str]:
         if i == cap + 1:
             items.append(f'<li class="cutoff">Debate cap ({cap}) — below this line: '
                          f'{"skim list" if overflow == "skim" else "later runs"}</li>')
-        items.append(paper_item(ctx, r, f'<span class="pos">#{i}</span>'))
+        pick = (f'<input type="checkbox" name="ids" value="{e(r["id"])}" form="debate-form" '
+                f'aria-label="Select for debate">')
+        items.append(paper_item(ctx, r, f'{pick}<span class="pos">#{i}</span>'))
     skims = ctx.store.conn.execute("SELECT COUNT(*) FROM papers WHERE status = ?", (STATUS_SKIM,)).fetchone()[0]
     body = f"""<h1>Debate queue</h1>
+<!--actions-->
 <p class="lead">{len(queue)} paper(s) passed the Jev gate and are waiting. The next <code>paperbot run</code>
 debates the top {nxt}, highest Jev score first{est}. {fate}</p>
 <p class="statuses">Also: <a href="bank{q(status=STATUS_SKIM)}">{skims} on the skim list</a> ·

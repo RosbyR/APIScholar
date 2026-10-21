@@ -93,6 +93,13 @@ Tabs on the site:
   to the overflow, and the estimated Claude cost.
 - Click any title for its page: Jev's level probabilities and facets, your votes, the full debate.
 
+Buttons (they run in the background, one at a time, and never overlap a `paperbot run`; paid ones ask first):
+- **Jev bank:** *Fetch new papers* (harvest), *Score N new with Jev* (triage), *Score friends' papers*.
+- **Debate queue:** tick papers and press *Debate ticked papers*, or *Debate the top* 1–10. Only those
+  papers are debated (max 20 per press). The rest of the queue stays queued, unlike a plain
+  `paperbot debate`, which moves overflow to the skim list. *Write digest* puts kept papers in a new digest.
+- The status box updates itself while a job runs.
+
 ## Sharing with friends
 
 Friends get their own feed, scored by Jev only (no Claude), so it costs fractions of a cent per

@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from . import actions as act
 from . import friends as fr
 from .config import Config, load_config
 from .site import ASSETS, _page, digest_html, index_html, load_digests, render_digest
@@ -66,10 +67,58 @@ def owner_nav(active: str) -> str:
                                                "Friends</a></nav>")
 
 
+OWNER_JOB = 0  # key in owner_jobs; friends' jobs are keyed by their user id in a separate Jobs
+
+
+def actions_html(page: str, store: Store, cfg: Config, owner_jobs: fr.Jobs) -> str:
+    """Buttons for the bank/queue pages plus the status of the current or last owner job."""
+    running = owner_jobs.running(OWNER_JOB)
+    off = " disabled" if running else ""
+    status = owner_jobs.status.get(OWNER_JOB)
+    box = ""
+    if status:
+        poll = ' data-poll="1"' if running else ""
+        box = f'<p class="notice"{poll}>{"⏳ " if running else ""}{views.e(status)}</p>'
+
+    def button(action: str, label: str, confirm: str = "") -> str:
+        c = f' data-confirm="{views.e(confirm)}"' if confirm else ""
+        return (f'<form method="post" action="/actions"{c}><input type="hidden" name="action" value="{action}">'
+                f'<input type="hidden" name="back" value="/{page}"><button{off}>{label}</button></form>')
+
+    if page == "bank":
+        n_new = store.conn.execute("SELECT COUNT(*) FROM papers WHERE status IN ('new', 'triage_error')").fetchone()[0]
+        n_friends = sum(1 for f in fr.list_friends(store) if f.ready and not f.disabled)
+        parts = [button("harvest", "Fetch new papers"),
+                 button("triage", f"Score {n_new:,} new with Jev" if n_new else "Score new with Jev (none waiting)",
+                        f"Score {n_new:,} papers with Jev? About ${n_new * 1000 * 0.042 / 1e6:.3f}.")]
+        if n_friends:
+            parts.append(button("friends", f"Score friends' papers ({n_friends})",
+                                "Score new papers for all friends with Jev? Usually well under $0.10."))
+        return f'<div class="actions">{"".join(parts)}</div>{box}'
+    if page == "queue":
+        cost = store.conn.execute("SELECT COALESCE(SUM(cost_usd), 0), COUNT(DISTINCT paper_id) FROM llm_calls "
+                                  "WHERE cost_usd IS NOT NULL").fetchone()
+        per = cost[0] / cost[1] if cost[1] else 0.3
+        tops = "".join(f'<option value="{n}"{" selected" if n == 3 else ""}>{n}</option>' for n in (1, 2, 3, 5, 8, 10))
+        confirm = f"Run Claude debates? About ${per:.2f} per paper."
+        return (f'<form id="debate-form" method="post" action="/actions" class="actions" data-confirm="{confirm}">'
+                f'<input type="hidden" name="action" value="debate"><input type="hidden" name="back" value="/queue">'
+                f'<button name="mode" value="selected"{off}>Debate ticked papers</button>'
+                f'<span class="hint">or</span><button name="mode" value="top"{off}>Debate the top</button>'
+                f'<select name="top" aria-label="How many">{tops}</select>'
+                f'<span class="hint">~${per:.2f}/paper, max {act.MAX_DEBATE} per press. The rest of the queue is '
+                f'left as is.</span></form>'
+                f'<div class="actions">{button("digest", "Write digest")}'
+                f'<span class="hint">Puts kept papers into a new digest.</span></div>{box}')
+    return box
+
+
 def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
-                 jobs: fr.Jobs | None = None) -> type[BaseHTTPRequestHandler]:
+                 jobs: fr.Jobs | None = None, action_runner: Callable = act.run_action,
+                 owner_jobs: fr.Jobs | None = None) -> type[BaseHTTPRequestHandler]:
     db_path, digest_dir = cfg.db_path, cfg.digest_dir
     jobs = jobs or fr.Jobs()
+    owner_jobs = owner_jobs or fr.Jobs()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "paperbot"
@@ -226,6 +275,9 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
                     result = views.queue_page(ctx)
                 else:
                     result = views.paper_page(ctx, params.get("id", ""))
+                if result is not None and "<!--actions-->" in result[1]:
+                    result = (result[0], result[1].replace(
+                        "<!--actions-->", actions_html(path.strip("/"), store, ctx.cfg, owner_jobs), 1))
             finally:
                 store.close()
             if result is None:
@@ -264,6 +316,8 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
                     return self._owner_vote()
                 if url.path == "/friends":
                     return self._owner_friends_post()
+                if url.path == "/actions":
+                    return self._owner_action()
                 return self._send(HTTPStatus.NOT_FOUND, "not found", "text/plain")
             store = Store(db_path)
             try:
@@ -323,6 +377,34 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
                 store.close()
             self._html(title, body)
 
+        def _owner_action(self) -> None:
+            form = self._form()
+            action = (form.get("action") or [""])[0]
+            back = (form.get("back") or ["/bank"])[0]
+            back = back if back in ("/bank", "/queue") else "/bank"
+            if action not in act.ACTIONS:
+                return self._send(HTTPStatus.BAD_REQUEST, "unknown action", "text/plain")
+            ids, top = None, None
+            if action == "debate":
+                if (form.get("mode") or [""])[0] == "selected":
+                    ids = [i for i in form.get("ids") or [] if i][: act.MAX_DEBATE]
+                    if not ids:
+                        owner_jobs.status[OWNER_JOB] = "Tick at least one paper first, or use Debate the top."
+                        return self._redirect(back)
+                else:
+                    try:
+                        top = max(1, min(act.MAX_DEBATE, int((form.get("top") or ["3"])[0])))
+                    except ValueError:
+                        top = 3
+            live_cfg = load_config(cfg.root)
+            started = owner_jobs.start(OWNER_JOB, lambda report: action_runner(live_cfg, action, report,
+                                                                               ids=ids, top=top))
+            if started:
+                log.info("action %s started%s", action, f" ids={ids}" if ids else f" top={top}" if top else "")
+            else:
+                owner_jobs.status[OWNER_JOB] = "Still busy with the previous job; wait for it to finish."
+            self._redirect(back)
+
         def _friend_vote(self, store: Store, friend: fr.Friend) -> None:
             body = self._json()
             if body is None:
@@ -371,5 +453,7 @@ def _active(path: str) -> str:
 
 
 def make_server(cfg: Config, key: str, port: int, onboard: Callable = fr.onboard,
-                jobs: fr.Jobs | None = None) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(cfg, key, onboard, jobs))
+                jobs: fr.Jobs | None = None, action_runner: Callable = act.run_action,
+                owner_jobs: fr.Jobs | None = None) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer(("127.0.0.1", port),
+                               make_handler(cfg, key, onboard, jobs, action_runner, owner_jobs))

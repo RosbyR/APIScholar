@@ -126,3 +126,12 @@ form.topics fieldset { border: 1px solid var(--rule); border-radius: 6px; paddin
 form.topics legend { font-weight: 600; font-size: 14px; }
 label.cat { display: block; font-size: 14px; padding: 0.15rem 0; }
 label.cat code { color: var(--muted); font-size: 12px; }
+
+/* ---- action buttons (owner) ---- */
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.75rem 0; font: 14px system-ui, sans-serif; }
+.actions form { display: contents; }
+.actions button, .actions select { font: 14px system-ui, sans-serif; padding: 0.4rem 0.8rem; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 6px; background: var(--accent); color: var(--fg); }
+.actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.actions .hint { color: var(--muted); font-size: 13px; }
+li.paper input[type=checkbox] { width: 1.1rem; height: 1.1rem; }
