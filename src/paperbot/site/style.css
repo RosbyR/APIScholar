@@ -264,3 +264,40 @@ label.cat code { background: none; color: var(--muted); font-size: 0.75rem; padd
 .spam-btn[data-spam="0"] { color: var(--up); }
 li.paper.gone { opacity: 0.35; transition: opacity 0.3s ease; }
 .st-spam { background: var(--down-soft); color: var(--down); }
+
+/* ---- export button ---- */
+a.btn { display: inline-flex; align-items: center; gap: 0.4rem; font: 500 0.9rem var(--sans); padding: 0.5rem 0.95rem;
+  border-radius: 10px; border: 1px solid var(--rule); background: var(--surface); color: var(--fg);
+  box-shadow: var(--shadow); text-decoration: none; transition: all 0.12s ease; }
+a.btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.hero .actions { margin-top: 0.9rem; }
+.print-footer { display: none; }
+
+/* ---- print / PDF export: always light, no interface, cards kept together where possible ---- */
+@media print {
+  :root {
+    --bg: #ffffff; --surface: #ffffff; --surface-2: #f3f2ee; --fg: #16171a; --muted: #5d6068; --rule: #dcd9d0;
+    --accent: #3b5bdb; --accent-soft: #e8edff; --accent-ink: #2741b8; --on-accent: #ffffff;
+    --up: #1f7a52; --up-soft: #e3f4ec; --down: #b23a27; --down-soft: #fbe9e5; --warn: #93580a; --warn-soft: #fdf1dc;
+    --shadow: none; --shadow-hover: none;
+  }
+  @page { size: Letter; margin: 16mm 15mm 18mm; }
+  html, body { background: #fff; }
+  body { font-size: 10.5pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .topbar, .fb, .spam-btn, .actions, button, main > nav:first-child { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .hero { margin: 0 0 6mm; }
+  .hero h1 { font-size: 20pt; }
+  .entries { display: block; }
+  article.entry, section.block { box-shadow: none; border-radius: 8px; margin: 0 0 5mm; padding: 5mm 6mm 4mm; }
+  article.entry h3, article.entry h3 + p { break-after: avoid; page-break-after: avoid; }
+  article.entry h3 { font-size: 13pt; }
+  article.entry p, article.entry li, section.block p, section.block li { font-size: 10.5pt; line-height: 1.5; orphans: 3; widows: 3; }
+  /* keep each bullet whole and a label like "Evidence." with its first bullet, without forcing whole
+     lists onto the next page (that left big gaps) */
+  article.entry li { break-inside: avoid; }
+  article.entry p:has(+ ul) { break-after: avoid; page-break-after: avoid; }
+  a { color: var(--fg); text-decoration: none; }
+  article.entry h3 a::after { content: " ↗"; color: var(--muted); font-size: 0.8em; }
+  .print-footer { display: block; margin-top: 6mm; color: var(--muted); font: 8.5pt var(--sans); text-align: center; }
+}

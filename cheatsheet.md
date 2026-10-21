@@ -93,6 +93,8 @@ Tabs on the site:
 - **Debate queue**: passed papers in the order the next run debates them, the cap line, what happens
   to the overflow, and the estimated Claude cost.
 - Click any title for its page: Jev's level probabilities and facets, your votes, the full debate.
+- **Export PDF** (top of each digest) downloads it as a PDF, made by headless Chrome/Edge on this laptop in
+  about a second. Light theme, no buttons. Browser Print → Save as PDF gives the same layout.
 
 Buttons (they run in the background, one at a time, and never overlap a `paperbot run`; paid ones ask first):
 - **Jev bank:** *Fetch new papers* (harvest), *Score N new with Jev* (triage), *Score friends' papers*.

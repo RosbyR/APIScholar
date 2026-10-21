@@ -33,6 +33,7 @@ from . import spam as spam_mod
 from .config import Config, load_config
 from .site import ASSETS, _page, digest_html, index_html, load_digests, render_digest
 from .site import friend_views, views
+from .site import pdf as pdf_mod
 from .store import Store
 
 log = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ COOKIE = "pb_key"          # owner
 FRIEND_COOKIE = "pb_user"  # friend invite token
 COOKIE_ATTRS = "Path=/; HttpOnly; SameSite=Lax"
 STEM_RE = re.compile(r"^/([\w-]+?)(?:\.html)?$")
+PDF_RE = re.compile(r"^/([\w-]+)\.pdf$")
 ASSET_TYPES = {"/style.css": "text/css; charset=utf-8", "/app.js": "text/javascript; charset=utf-8"}
 OWNER_VIEWS = ("/votes", "/bank", "/queue", "/paper")
 # Inline style attributes are allowed for the score bars; all database text is HTML-escaped.
@@ -116,7 +118,8 @@ def actions_html(page: str, store: Store, cfg: Config, owner_jobs: fr.Jobs) -> s
 
 def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
                  jobs: fr.Jobs | None = None, action_runner: Callable = act.run_action,
-                 owner_jobs: fr.Jobs | None = None) -> type[BaseHTTPRequestHandler]:
+                 owner_jobs: fr.Jobs | None = None,
+                 pdf_renderer: Callable | None = None) -> type[BaseHTTPRequestHandler]:
     db_path, digest_dir = cfg.db_path, cfg.digest_dir
     jobs = jobs or fr.Jobs()
     owner_jobs = owner_jobs or fr.Jobs()
@@ -263,12 +266,35 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
             if path.startswith("/me"):
                 return self._html("Friends only", owner_nav("") + "<p>These pages are for friends. "
                                   "Use an invite link in a private window to see what they see.</p>")
+            m = PDF_RE.match(path)
+            if m:
+                return self._digest_pdf(m.group(1))
             m = STEM_RE.match(path)
             md = digest_dir / f"{m.group(1)}.md" if m else None
             if md and md.is_file():
                 page = render_digest(md.read_text(encoding="utf-8"), md.stem)
+                export = (f'<div class="actions"><a class="btn" href="/{page.stem}.pdf" download>'
+                          f'⬇ Export PDF</a></div></header>')
+                page.body = page.body.replace("</header>", export, 1)
                 return self._send(HTTPStatus.OK, digest_html(page, owner_nav("")))
             self._send(HTTPStatus.NOT_FOUND, "<p>Not found. <a href=\"/\">All digests</a></p>")
+
+        def _digest_pdf(self, stem: str) -> None:
+            md = digest_dir / f"{stem}.md"
+            if not md.is_file():
+                return self._send(HTTPStatus.NOT_FOUND, "no such digest", "text/plain")
+            page = render_digest(md.read_text(encoding="utf-8"), stem)
+            try:
+                data = (pdf_renderer or pdf_mod.render_pdf)(page)
+            except pdf_mod.PdfError as e:
+                log.error("PDF export of %s failed: %s", stem, e)
+                return self._html("PDF export failed", owner_nav("") + f'<p class="error">PDF export failed: '
+                                  f'{views.e(e)}</p><p>You can still use your browser\'s Print → Save as PDF on '
+                                  f'<a href="/{stem}">the digest</a>; it uses the same print layout.</p>',
+                                  HTTPStatus.SERVICE_UNAVAILABLE)
+            log.info("exported %s.pdf (%d KB)", stem, len(data) // 1024)
+            self._send(HTTPStatus.OK, data, "application/pdf",
+                       headers={"Content-Disposition": f'attachment; filename="paper-digest-{stem}.pdf"'})
 
         def _owner_view(self, path: str, params: dict[str, str]) -> None:
             # Reload config each time so threshold/profile edits show without a restart.
@@ -490,6 +516,6 @@ def _active(path: str) -> str:
 
 def make_server(cfg: Config, key: str, port: int, onboard: Callable = fr.onboard,
                 jobs: fr.Jobs | None = None, action_runner: Callable = act.run_action,
-                owner_jobs: fr.Jobs | None = None) -> ThreadingHTTPServer:
+                owner_jobs: fr.Jobs | None = None, pdf_renderer: Callable | None = None) -> ThreadingHTTPServer:
     return ThreadingHTTPServer(("127.0.0.1", port),
-                               make_handler(cfg, key, onboard, jobs, action_runner, owner_jobs))
+                               make_handler(cfg, key, onboard, jobs, action_runner, owner_jobs, pdf_renderer))
