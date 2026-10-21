@@ -1,6 +1,8 @@
 // Thumb buttons on digest pages. Votes go to /api/feedback (Pages Function -> D1);
 // the next scheduled run pulls them into paperbot's store as feedback + calibration labels.
-const API = "/api/feedback";
+// The page says where votes go: Roz's /api/feedback, or a friend's /api/me/votes.
+const API = document.body.dataset.api || "/api/feedback";
+const ASK_NOTE = document.body.dataset.notes !== "off";
 
 function mark(id, rating) {
   for (const box of document.querySelectorAll(`.fb[data-id="${CSS.escape(id)}"]`)) {
@@ -28,7 +30,7 @@ document.addEventListener("click", async (e) => {
   const msg = box.querySelector(".fb-msg");
   const rating = Number(b.dataset.r);
   let note = null;
-  if (rating < 0) {
+  if (rating < 0 && ASK_NOTE) {
     note = prompt("Optional: what made this one miss? (leave blank to skip)", "");
     if (note === null) return; // cancelled
   }

@@ -64,7 +64,7 @@ def render_digest(md: str, stem: str) -> DigestPage:
     return DigestPage(stem=stem, title=title, papers=papers, body=body)
 
 
-def _page(title: str, body: str, back: bool) -> str:
+def _page(title: str, body: str, back: bool, api: str = "/api/feedback", notes: bool = True) -> str:
     nav = '<nav><a href="./">← All digests</a></nav>' if back else ""
     return f"""<!doctype html>
 <html lang="en">
@@ -75,7 +75,7 @@ def _page(title: str, body: str, back: bool) -> str:
 <title>{html.escape(title)}</title>
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-api="{html.escape(api)}" data-notes="{'on' if notes else 'off'}">
 <main>
 {nav}
 {body}

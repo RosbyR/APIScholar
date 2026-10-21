@@ -102,3 +102,27 @@ form.filters input[type=number] { width: 7rem; }
 form.filters button { cursor: pointer; background: var(--accent); }
 .pager { display: flex; justify-content: space-between; align-items: center; font: 14px system-ui, sans-serif; margin: 0.75rem 0; }
 .pager span { color: var(--muted); }
+
+/* ---- friends ---- */
+.notice { padding: 0.6rem 0.8rem; border-radius: 6px; background: var(--accent); font: 14px/1.5 system-ui, sans-serif; }
+.error { padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--down); color: var(--down); font: 14px system-ui, sans-serif; }
+.notice input, .invite input { width: 100%; font: 13px ui-monospace, Consolas, monospace; padding: 0.35rem;
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); color: var(--fg); }
+form.inline { display: inline; }
+form.inline button, form.topics button[type=submit] { font: 14px system-ui, sans-serif; padding: 0.35rem 0.8rem; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 6px; background: var(--accent); color: var(--fg); }
+article.card { border: 1px solid var(--rule); border-radius: 10px; padding: 1rem 1.1rem; margin-top: 1rem; }
+article.card h2 { margin-top: 0.25rem; }
+form.answer { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+form.answer button { flex: 1 1 8rem; font: 600 16px system-ui, sans-serif; padding: 0.7rem; cursor: pointer;
+  border-radius: 8px; border: 1px solid var(--rule); background: var(--bg); color: var(--fg); }
+form.answer .yes { border-color: var(--up); }
+form.answer .no { border-color: var(--down); }
+form.answer .skip { flex: 0 1 6rem; color: var(--muted); }
+form.topics { display: grid; gap: 0.5rem; font: 15px/1.5 system-ui, sans-serif; }
+form.topics textarea { font: inherit; padding: 0.5rem; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--bg); color: var(--fg); width: 100%; }
+form.topics fieldset { border: 1px solid var(--rule); border-radius: 6px; padding: 0.5rem 0.75rem; }
+form.topics legend { font-weight: 600; font-size: 14px; }
+label.cat { display: block; font-size: 14px; padding: 0.15rem 0; }
+label.cat code { color: var(--muted); font-size: 12px; }

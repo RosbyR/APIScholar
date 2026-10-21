@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ STATUS_SKIM = "skim"                  # passed, but over the debate cap: listed 
 STATUS_DEBATE_ERROR = "debate_error"  # LLM failure; retried next run
 STATUS_VETOED = "vetoed"              # judge said not worth reading
 STATUS_ACCEPTED = "accepted"          # judge kept it; goes in next digest
+STATUS_FRIENDS_ONLY = "friends_only"  # fetched only for friends; never triaged with Roz's rubric
 STATUS_DIGESTED = "digested"          # delivered in a digest
 
 _ARXIV_ID_RE = re.compile(r"(\d{4}\.\d{4,5})(v\d+)?$|([a-z\-]+(?:\.[A-Z]{2})?/\d{7})(v\d+)?$", re.I)
@@ -54,6 +56,16 @@ def title_hash(title: str) -> str:
     t = unicodedata.normalize("NFKD", title or "").encode("ascii", "ignore").decode()
     t = re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()
     return hashlib.sha1(t.encode()).hexdigest()[:16]
+
+
+# Harvest source names used only for friends' categories/phrases (see friends.py). A paper seen
+# by nothing else is left out of Roz's own triage.
+FRIEND_SOURCES = {"arxiv_rss_friends", "openalex_friends", "arxiv_api_friends"}
+
+
+def is_friend_only(sources_json: str) -> bool:
+    srcs = set(json.loads(sources_json or "[]"))
+    return bool(srcs) and srcs <= FRIEND_SOURCES
 
 
 @dataclass

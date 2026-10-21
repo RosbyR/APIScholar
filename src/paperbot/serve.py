@@ -1,13 +1,17 @@
-"""`paperbot serve`: the digest website from this machine, for a Cloudflare quick tunnel.
+"""`paperbot serve`: the website from this machine, for a Cloudflare quick tunnel.
 
-Pages are rendered from digests/*.md on every request, so a new digest shows up without a
-rebuild. Thumb clicks (site/app.js) go straight into the local store as feedback, which also
-makes them calibration labels.
+Two kinds of visitor:
+- Roz (owner): digests, votes, Jev bank, debate queue, paper pages, and the Friends admin page.
+  Authenticated by the per-start access key: open `/?key=...` once and it is kept in a cookie.
+- Friends: invite links `/join?t=<token>` (created on the Friends page or `paperbot invite`) set
+  a cookie for that friend. They only reach /me (their Jev-only feed), /me/train, /me/topics
+  and their own votes API. They never see Roz's papers, votes or settings.
 
-The server listens on 127.0.0.1 only; `cloudflared tunnel --url` makes it public under a random
-trycloudflare.com name. Because that is reachable by anyone who learns the name, every request
-needs the access key: open the printed link once (`/?key=...`) and the key is kept in a
-SameSite=Strict cookie, which also stops cross-site form posts.
+Pages are rendered from the database / digests/*.md on every request. The server listens on
+127.0.0.1 only; `cloudflared tunnel --url` makes it public under a random trycloudflare.com
+name, which is why everything needs a key or invite token. Cookies are HttpOnly and
+SameSite=Lax; state-changing requests are POSTs that must be same-origin (Origin checked) and,
+for the JSON APIs, application/json.
 """
 
 from __future__ import annotations
@@ -20,19 +24,23 @@ import secrets
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from typing import Callable
+from urllib.parse import parse_qs, urlencode, urlsplit
 
+from . import friends as fr
 from .config import Config, load_config
 from .site import ASSETS, _page, digest_html, index_html, load_digests, render_digest
-from .site import views
+from .site import friend_views, views
 from .store import Store
 
 log = logging.getLogger(__name__)
 
-COOKIE = "pb_key"
+COOKIE = "pb_key"          # owner
+FRIEND_COOKIE = "pb_user"  # friend invite token
+COOKIE_ATTRS = "Path=/; HttpOnly; SameSite=Lax"
 STEM_RE = re.compile(r"^/([\w-]+?)(?:\.html)?$")
 ASSET_TYPES = {"/style.css": "text/css; charset=utf-8", "/app.js": "text/javascript; charset=utf-8"}
+OWNER_VIEWS = ("/votes", "/bank", "/queue", "/paper")
 # Inline style attributes are allowed for the score bars; all database text is HTML-escaped.
 CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; "
        "form-action 'self'; frame-ancestors 'none'")
@@ -48,8 +56,20 @@ def latest_votes(store: Store) -> dict[str, int]:
     return {r[0]: 1 if r[1] else -1 for r in store.conn.execute("SELECT paper_id, relevant FROM labels")}
 
 
-def make_handler(cfg: Config, key: str) -> type[BaseHTTPRequestHandler]:
+def friend_votes(store: Store, user_id: int) -> dict[str, int]:
+    return {r[0]: 1 if r[1] else -1 for r in store.conn.execute(
+        "SELECT paper_id, relevant FROM user_labels WHERE user_id = ?", (user_id,))}
+
+
+def owner_nav(active: str) -> str:
+    return views.nav(active).replace("</nav>", f'<a href="friends"{" aria-current=page" if active == "friends" else ""}>'
+                                               "Friends</a></nav>")
+
+
+def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
+                 jobs: fr.Jobs | None = None) -> type[BaseHTTPRequestHandler]:
     db_path, digest_dir = cfg.db_path, cfg.digest_dir
+    jobs = jobs or fr.Jobs()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "paperbot"
@@ -69,57 +89,131 @@ def make_handler(cfg: Config, key: str) -> type[BaseHTTPRequestHandler]:
             self.send_header("X-Robots-Tag", "noindex")
             self.send_header("Content-Security-Policy", CSP)
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")  # invite tokens must not leak via Referer
             for k, v in (headers or {}).items():
                 self.send_header(k, v)
             self.end_headers()
             self.wfile.write(data)
 
-        def _authorized(self) -> bool:
+        def _redirect(self, location: str, cookie: str | None = None) -> None:
+            headers = {"Location": location}
+            if cookie:
+                headers["Set-Cookie"] = cookie
+            self._send(HTTPStatus.SEE_OTHER, "", headers=headers)
+
+        def _html(self, title: str, body: str, status: int = HTTPStatus.OK, friend: bool = False) -> None:
+            self._send(status, _page(title, body, back=False, api="/api/me/votes" if friend else "/api/feedback",
+                                     notes=not friend))
+
+        def _cookie(self, name: str) -> str:
             jar = SimpleCookie(self.headers.get("Cookie", ""))
-            got = jar[COOKIE].value if COOKIE in jar else ""
-            return hmac.compare_digest(got.encode(), key.encode())
+            return jar[name].value if name in jar else ""
 
-        def _gate(self, path: str, query: str) -> bool:
-            """True if the request may proceed; otherwise a response was already sent."""
-            given = (parse_qs(query).get("key") or [""])[0]
-            if given and hmac.compare_digest(given.encode(), key.encode()):
-                # Swap the key in the URL for a cookie, so it doesn't sit in history or get shared.
-                self._send(HTTPStatus.SEE_OTHER, "", headers={
-                    "Location": path or "/",
-                    "Set-Cookie": f"{COOKIE}={key}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000",
-                })
-                return False
-            if self._authorized():
-                return True
-            self._send(HTTPStatus.FORBIDDEN, "<p>Open the link printed by <code>paperbot serve</code> "
-                                             "(it ends in <code>?key=…</code>).</p>")
-            return False
+        def _is_owner(self) -> bool:
+            return hmac.compare_digest(self._cookie(COOKIE).encode(), key.encode())
 
-        # ---- routes -------------------------------------------------------------------
+        def _friend(self, store: Store) -> fr.Friend | None:
+            f = fr.get_by_token(store, self._cookie(FRIEND_COOKIE))
+            return f if f and not f.disabled else None
+
+        def _same_origin(self) -> bool:
+            origin = self.headers.get("Origin")
+            if not origin:
+                return True  # older browsers omit it on same-origin POSTs; SameSite=Lax still applies
+            return urlsplit(origin).netloc == self.headers.get("Host", "")
+
+        def _base_url(self) -> str:
+            host = self.headers.get("Host", "127.0.0.1")
+            proto = self.headers.get("X-Forwarded-Proto") or ("http" if host.startswith(("127.", "localhost")) else "https")
+            return f"{proto}://{host}"
+
+        def _form(self) -> dict[str, list[str]]:
+            length = min(int(self.headers.get("Content-Length") or 0), 50_000)
+            return parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
+
+        def _json(self) -> dict | None:
+            if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+                self._send(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "expected application/json", "text/plain")
+                return None
+            try:
+                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 10_000)) or b"{}")
+            except (ValueError, json.JSONDecodeError):
+                body = None
+            if not isinstance(body, dict):
+                self._send(HTTPStatus.BAD_REQUEST, "invalid JSON", "text/plain")
+                return None
+            return body
+
+        def _forbidden(self) -> None:
+            self._send(HTTPStatus.FORBIDDEN, _page("Not signed in", "<h1>Not signed in</h1><p>Open your personal "
+                                                   "invite link again. If the site's address changed, ask for a new "
+                                                   "one.</p>", back=False))
+
+        # ---- GET ---------------------------------------------------------------------------
         def do_GET(self):
             url = urlsplit(self.path)
-            if not self._gate(url.path, url.query):
-                return
+            params = {k: v[0] for k, v in parse_qs(url.query).items()}
+            given = params.get("key", "")
+            if given and hmac.compare_digest(given.encode(), key.encode()):
+                # Swap the key in the URL for a cookie, so it doesn't sit in history or get shared.
+                return self._redirect(url.path or "/", f"{COOKIE}={key}; {COOKIE_ATTRS}; Max-Age=2592000")
             if url.path in ASSET_TYPES:
                 return self._send(HTTPStatus.OK, (ASSETS / url.path[1:]).read_bytes(), ASSET_TYPES[url.path])
-            if url.path == "/api/feedback":
+            if url.path == "/join":
+                return self._join(params.get("t", ""))
+            if self._is_owner():
+                return self._owner_get(url.path, params)
+            store = Store(db_path)
+            try:
+                friend = self._friend(store)
+                if friend is None:
+                    return self._forbidden()
+                fr.touch(store, friend.id)
+                return self._friend_get(store, friend, url.path, params)
+            finally:
+                store.close()
+
+        def _join(self, token: str) -> None:
+            store = Store(db_path)
+            try:
+                f = fr.get_by_token(store, token)
+            finally:
+                store.close()
+            if f is None or f.disabled:
+                return self._forbidden()
+            self._redirect("/me" if f.ready else "/me/topics",
+                           f"{FRIEND_COOKIE}={token}; {COOKIE_ATTRS}; Max-Age=31536000")
+
+        def _owner_get(self, path: str, params: dict[str, str]) -> None:
+            if path == "/api/feedback":
                 store = Store(db_path)
                 try:
                     return self._send(HTTPStatus.OK, json.dumps(latest_votes(store)), "application/json")
                 finally:
                     store.close()
-            if url.path in ("/", "/index.html"):
-                return self._send(HTTPStatus.OK, index_html(load_digests(digest_dir), views.nav("./")))
-            if url.path in ("/votes", "/bank", "/queue", "/paper"):
-                return self._view(url.path, {k: v[0] for k, v in parse_qs(url.query).items()})
-            m = STEM_RE.match(url.path)
+            if path in ("/", "/index.html"):
+                return self._send(HTTPStatus.OK, index_html(load_digests(digest_dir), owner_nav("./")))
+            if path in OWNER_VIEWS:
+                return self._owner_view(path, params)
+            if path == "/friends":
+                store = Store(db_path)
+                try:
+                    title, body = friend_views.admin_page(store, self._base_url(), owner_nav("friends"),
+                                                          new_link=None)
+                finally:
+                    store.close()
+                return self._html(title, body)
+            if path.startswith("/me"):
+                return self._html("Friends only", owner_nav("") + "<p>These pages are for friends. "
+                                  "Use an invite link in a private window to see what they see.</p>")
+            m = STEM_RE.match(path)
             md = digest_dir / f"{m.group(1)}.md" if m else None
             if md and md.is_file():
                 page = render_digest(md.read_text(encoding="utf-8"), md.stem)
-                return self._send(HTTPStatus.OK, digest_html(page, views.nav("")))
+                return self._send(HTTPStatus.OK, digest_html(page, owner_nav("")))
             self._send(HTTPStatus.NOT_FOUND, "<p>Not found. <a href=\"/\">All digests</a></p>")
 
-        def _view(self, path: str, params: dict[str, str]):
+        def _owner_view(self, path: str, params: dict[str, str]) -> None:
             # Reload config each time so threshold/profile edits show without a restart.
             store = Store(db_path)
             try:
@@ -135,26 +229,62 @@ def make_handler(cfg: Config, key: str) -> type[BaseHTTPRequestHandler]:
             finally:
                 store.close()
             if result is None:
-                return self._send(HTTPStatus.NOT_FOUND, _page("Not found", views.nav("") + "<p>No such paper.</p>", False))
+                return self._html("Not found", owner_nav("") + "<p>No such paper.</p>", HTTPStatus.NOT_FOUND)
             title, body = result
-            self._send(HTTPStatus.OK, _page(title, body, back=False))
+            self._html(title, body.replace(views.nav(_active(path)), owner_nav(_active(path)), 1))
 
+        def _friend_get(self, store: Store, friend: fr.Friend, path: str, params: dict[str, str]) -> None:
+            if path == "/api/me/votes":
+                return self._send(HTTPStatus.OK, json.dumps(friend_votes(store, friend.id)), "application/json")
+            if not friend.ready and path != "/me/topics":
+                return self._redirect("/me/topics")
+            status, running = jobs.status.get(friend.id), jobs.running(friend.id)
+            if path == "/me/topics":
+                title, body = friend_views.topics_page(friend, saved=params.get("saved") == "1")
+            elif path == "/me/train":
+                skip = [s for s in params.get("skip", "").split(",") if s][:20]
+                title, body = friend_views.train_page(store, friend, skip, status, running)
+            elif path in ("/me", "/"):
+                try:
+                    page = max(1, int(params.get("page") or 1))
+                except ValueError:
+                    page = 1
+                title, body = friend_views.feed_page(store, friend, page, status, running)
+            else:
+                return self._redirect("/me")
+            self._html(title, body, friend=True)
+
+        # ---- POST --------------------------------------------------------------------------
         def do_POST(self):
             url = urlsplit(self.path)
-            if url.path != "/api/feedback":
+            if not self._same_origin():
+                return self._send(HTTPStatus.FORBIDDEN, "cross-origin request refused", "text/plain")
+            if self._is_owner():
+                if url.path == "/api/feedback":
+                    return self._owner_vote()
+                if url.path == "/friends":
+                    return self._owner_friends_post()
                 return self._send(HTTPStatus.NOT_FOUND, "not found", "text/plain")
-            if not self._authorized():
-                return self._send(HTTPStatus.FORBIDDEN, "missing or wrong access key", "text/plain")
-            if not (self.headers.get("Content-Type") or "").startswith("application/json"):
-                return self._send(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "expected application/json", "text/plain")
+            store = Store(db_path)
             try:
-                length = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(min(length, 10_000)) or b"{}")
-            except (ValueError, json.JSONDecodeError):
-                return self._send(HTTPStatus.BAD_REQUEST, "invalid JSON", "text/plain")
-            pid = body.get("paper_id") if isinstance(body, dict) else None
-            rating = body.get("rating") if isinstance(body, dict) else None
-            note = body.get("note") if isinstance(body, dict) else None
+                friend = self._friend(store)
+                if friend is None:
+                    return self._send(HTTPStatus.FORBIDDEN, "not signed in", "text/plain")
+                if url.path == "/api/me/votes":
+                    return self._friend_vote(store, friend)
+                if url.path == "/me/topics":
+                    return self._friend_topics(store, friend)
+                if url.path == "/me/train":
+                    return self._friend_train(store, friend)
+                return self._send(HTTPStatus.NOT_FOUND, "not found", "text/plain")
+            finally:
+                store.close()
+
+        def _owner_vote(self) -> None:
+            body = self._json()
+            if body is None:
+                return
+            pid, rating, note = body.get("paper_id"), body.get("rating"), body.get("note")
             if not isinstance(pid, str) or not pid.strip() or rating not in (1, -1):
                 return self._send(HTTPStatus.BAD_REQUEST, "need paper_id and rating of 1 or -1", "text/plain")
             note = (note.strip()[:1000] or None) if isinstance(note, str) else None
@@ -168,8 +298,78 @@ def make_handler(cfg: Config, key: str) -> type[BaseHTTPRequestHandler]:
             log.info("vote %+d on %s%s", rating, pid, f" ({note})" if note else "")
             self._send(HTTPStatus.OK, json.dumps({"ok": True}), "application/json")
 
+        def _owner_friends_post(self) -> None:
+            form = self._form()
+            action = (form.get("action") or [""])[0]
+            store = Store(db_path)
+            try:
+                new_link = None
+                if action == "invite":
+                    try:
+                        f = fr.create_friend(store, (form.get("name") or [""])[0])
+                    except fr.FriendError as e:
+                        return self._html("Friends", owner_nav("friends") + f'<p class="error">{views.e(e)}</p>',
+                                          HTTPStatus.BAD_REQUEST)
+                    new_link = f"{self._base_url()}/join?{urlencode({'t': f.token})}"
+                    log.info("invited %s (user %s)", f.name, f.id)
+                elif action in ("disable", "enable"):
+                    try:
+                        fr.set_disabled(store, int((form.get("id") or ["0"])[0]), action == "disable")
+                    except ValueError:
+                        pass
+                    return self._redirect("/friends")
+                title, body = friend_views.admin_page(store, self._base_url(), owner_nav("friends"), new_link)
+            finally:
+                store.close()
+            self._html(title, body)
+
+        def _friend_vote(self, store: Store, friend: fr.Friend) -> None:
+            body = self._json()
+            if body is None:
+                return
+            pid, rating = body.get("paper_id"), body.get("rating")
+            if not isinstance(pid, str) or rating not in (1, -1):
+                return self._send(HTTPStatus.BAD_REQUEST, "need paper_id and rating of 1 or -1", "text/plain")
+            scored = store.conn.execute("SELECT 1 FROM user_scores WHERE user_id = ? AND paper_id = ?",
+                                        (friend.id, pid)).fetchone()
+            if not scored:  # friends can only vote on papers in their own feed
+                return self._send(HTTPStatus.NOT_FOUND, "not in your feed", "text/plain")
+            fr.label(store, friend.id, pid, rating > 0, "feed")
+            self._send(HTTPStatus.OK, json.dumps({"ok": True}), "application/json")
+
+        def _friend_topics(self, store: Store, friend: fr.Friend) -> None:
+            form = self._form()
+            values = {"interests": (form.get("interests") or [""])[0], "topics": (form.get("topics") or [""])[0],
+                      "phrases": (form.get("phrases") or [""])[0], "categories": form.get("categories") or []}
+            try:
+                changed = fr.save_profile(store, friend, values["interests"], values["topics"],
+                                          values["categories"], values["phrases"])
+            except fr.FriendError as e:
+                title, body = friend_views.topics_page(friend, error=str(e), form=values)
+                return self._html(title, body, HTTPStatus.BAD_REQUEST, friend=True)
+            if changed:
+                live_cfg = load_config(cfg.root)
+                jobs.start(friend.id, lambda report: onboard(live_cfg, friend.id, report))
+            self._redirect("/me/train" if changed else "/me")
+
+        def _friend_train(self, store: Store, friend: fr.Friend) -> None:
+            form = self._form()
+            pid = (form.get("paper_id") or [""])[0]
+            answer = (form.get("answer") or [""])[0]
+            skip = [s for s in (form.get("skip") or [""])[0].split(",") if s][-20:]
+            scored = store.conn.execute("SELECT 1 FROM user_scores WHERE user_id = ? AND paper_id = ?",
+                                        (friend.id, pid)).fetchone()
+            if scored and answer in ("yes", "no"):
+                fr.label(store, friend.id, pid, answer == "yes", "train")
+            self._redirect("/me/train" + (f"?{urlencode({'skip': ','.join(skip)})}" if answer == "skip" else ""))
+
     return Handler
 
 
-def make_server(cfg: Config, key: str, port: int) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(cfg, key))
+def _active(path: str) -> str:
+    return {"/votes": "votes", "/bank": "bank", "/queue": "queue"}.get(path, "")
+
+
+def make_server(cfg: Config, key: str, port: int, onboard: Callable = fr.onboard,
+                jobs: fr.Jobs | None = None) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(cfg, key, onboard, jobs))

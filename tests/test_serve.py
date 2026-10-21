@@ -46,7 +46,7 @@ def test_key_gate(served):
     assert req(port, "GET", "/?key=wrong", cookie=False)[0] == 403
     status, headers, _ = req(port, "GET", "/2026-10-14?key=" + KEY, cookie=False)
     assert status == 303 and headers["Location"] == "/2026-10-14"
-    assert "HttpOnly" in headers["Set-Cookie"] and "SameSite=Strict" in headers["Set-Cookie"]
+    assert "HttpOnly" in headers["Set-Cookie"] and "SameSite=Lax" in headers["Set-Cookie"]
     assert req(port, "POST", "/api/feedback", {"paper_id": "x", "rating": 1}, cookie=False)[0] == 403
 
 

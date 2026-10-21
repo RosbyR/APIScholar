@@ -48,21 +48,34 @@ def make_client(cfg: Config) -> httpx.Client:
     )
 
 
-def build_sources(cfg: Config, client: httpx.Client) -> list[Source]:
+def build_sources(cfg: Config, client: httpx.Client, store: Store | None = None) -> list[Source]:
+    """Roz's sources from profile.yaml, plus (with `store`) separate `*_friends` sources for the
+    arXiv categories and search phrases friends asked for that her profile doesn't cover."""
+    from ..friends import Relabeled, harvest_extras
     h = cfg.section("harvest")
     src_profile = cfg.profile.get("sources", {})
     sources: list[Source] = []
     ax = h.get("arxiv", {})
-    if ax.get("enabled", True) and src_profile.get("arxiv_categories"):
-        limiter = RateLimiter(ax.get("min_interval_s", 3.0))
-        sources.append(ArxivRSS(client, limiter, src_profile["arxiv_categories"], ax.get("announce_types")))
     oa = h.get("openalex", {})
+    arxiv_limiter = RateLimiter(ax.get("min_interval_s", 3.0))  # shared: arXiv allows 1 request / 3 s
+
+    def openalex(queries):
+        return OpenAlex(client, RateLimiter(oa.get("min_interval_s", 0.2)), queries,
+                        api_key=Config.env("OPENALEX_API_KEY"),
+                        per_page=oa.get("per_page", 100), max_pages_per_query=oa.get("max_pages_per_query", 3))
+
+    if ax.get("enabled", True) and src_profile.get("arxiv_categories"):
+        sources.append(ArxivRSS(client, arxiv_limiter, src_profile["arxiv_categories"], ax.get("announce_types")))
     if oa.get("enabled", True) and src_profile.get("openalex_queries"):
-        sources.append(OpenAlex(
-            client, RateLimiter(oa.get("min_interval_s", 0.2)), src_profile["openalex_queries"],
-            api_key=Config.env("OPENALEX_API_KEY"),
-            per_page=oa.get("per_page", 100), max_pages_per_query=oa.get("max_pages_per_query", 3),
-        ))
+        sources.append(openalex(src_profile["openalex_queries"]))
+    if store is not None:
+        cats, phrases = harvest_extras(store, src_profile.get("arxiv_categories") or [],
+                                       src_profile.get("openalex_queries") or [])
+        if cats and ax.get("enabled", True):
+            sources.append(Relabeled(ArxivRSS(client, arxiv_limiter, cats, ax.get("announce_types")),
+                                     "arxiv_rss_friends"))
+        if phrases and oa.get("enabled", True):
+            sources.append(Relabeled(openalex(phrases), "openalex_friends"))
     return sources
 
 

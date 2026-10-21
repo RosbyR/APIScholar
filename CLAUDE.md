@@ -73,6 +73,7 @@ CLI (seed → triage → debate → digest → feedback → calibrate → label)
 | Run lock, `.env` loading | `lock.py`, `config.py` | yes | n/a |
 | Windows Task Scheduler scripts | `scripts/*.ps1` | parse-checked only | **not registered yet** |
 | OneNote delivery (`paperbot deliver`) | `deliver/`, `deliver/onenote_push.ps1` | yes (fake push) | yes — page created in AI Agents › Paper Digests (12 Oct 2026) |
+| Friends: invites, Jev-only feeds, training, auto-threshold | `friends.py`, `site/friend_views.py`, `serve.py` | yes (`test_friends.py`, fake Jev) | yes — live onboarding on a DB copy 21 Oct 2026: q-bio.GN + OpenAlex phrase, 60 papers scored in 5 s for $0.0024, sensible scores/facets |
 | Laptop website (`paperbot serve` + `scripts/serve.ps1` quick tunnel) | `serve.py` | yes (real HTTP on 127.0.0.1) | yes — served through a trycloudflare.com tunnel, key gate + pages checked (21 Oct 2026) |
 | Website build (`paperbot site`) | `site/` | yes | built from real digests; served by `wrangler pages dev` (21 Oct 2026) |
 | Website votes API (Pages Function + D1) | `web/functions/api/feedback.js`, `web/schema.sql` | no JS tests | local `wrangler pages dev` with local D1 only; **not deployed yet** |
@@ -207,6 +208,17 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
   SQLite via `add_feedback`) and `cloudflared tunnel --url` (random trycloudflare.com host, new each
   start). Every request needs a per-start random key: `?key=` once, then a SameSite=Strict HttpOnly
   cookie; POSTs must be JSON; strict CSP. No D1/R2/Actions involved.
+- **Friends (21 Oct 2026):** invite-only (`users.token`, set as cookie `pb_user` by `/join?t=`), Jev only,
+  never Claude. Each friend's question set is generated from their interests/topics
+  (`friends.friend_profile`: fixed 0-4 ladder wording + one Noul per topic). Their scores/labels live in
+  `user_scores`/`user_labels`; Roz's `papers.jev_*`/`labels` are never touched. Candidates = papers whose
+  arXiv categories overlap theirs or whose title/abstract contains a phrase, first seen ≥ 7 days before
+  they joined. Friends' extra categories/phrases are harvested by `*_friends` source names; papers seen
+  only by those get status `friends_only` and skip Roz's triage (re-enter if her sources see them).
+  Training sampler draws from the least-labeled score bucket; threshold = F2 `suggest` without a
+  budget once ≥20 labels and ≥3 positive. Saving topics drops their scores (labels kept) and starts a
+  background onboarding job (backfill + score ≤600). Friends can only reach `/me*` and vote on papers
+  in their own `user_scores`; owner pages require `pb_key`. POSTs: same-origin check + SameSite=Lax.
 - **Cloud (built, not set up; see `DEPLOY.md`):** a GitHub Action, started by hand
   (`workflow_dispatch` only; the weekday cron was removed at Roz's request on 21 Oct 2026).
   State (`data/` + `digests/`) is one tarball in R2 (`paperbot-state/state/latest.tar.gz`, plus

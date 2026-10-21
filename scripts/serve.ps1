@@ -40,6 +40,8 @@ try {
         if ($m) { $url = $m.Matches[0].Value }
     }
     if (-not $url) { throw "no tunnel URL after 60 s; see $tunnelLog" }
+    # `paperbot invite` reads this to print full links for the current address.
+    Set-Content -Path (Join-Path $root "data\public_url.txt") -Value $url -Encoding utf8
     Write-Host ""
     Write-Host "Digests:  $url/?key=$($env:PAPERBOT_SERVE_KEY)" -ForegroundColor Green
     Write-Host "Local:    http://127.0.0.1:$Port/?key=$($env:PAPERBOT_SERVE_KEY)"

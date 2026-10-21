@@ -8,7 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from ..config import Config
-from ..models import STATUS_NEW, STATUS_PASSED, STATUS_REJECTED, STATUS_SKIM, STATUS_TRIAGE_ERROR
+from ..models import (STATUS_FRIENDS_ONLY, STATUS_NEW, STATUS_PASSED, STATUS_REJECTED, STATUS_SKIM,
+                      STATUS_TRIAGE_ERROR, is_friend_only)
 from ..store import Store, now_iso
 from .gate import decide
 from .jev import JevClient, JevError, JevFatalError
@@ -92,10 +93,17 @@ def run_triage(cfg: Config, store: Store, jev: JevClient, limit: int | None = No
     t = cfg.section("triage")
     questions = build_questions(cfg.profile)
     must = must_have_keys(cfg.profile)
-    statuses = [STATUS_NEW, STATUS_TRIAGE_ERROR]
+    statuses = [STATUS_NEW, STATUS_TRIAGE_ERROR, STATUS_FRIENDS_ONLY]
     if rescore:
         statuses += [STATUS_REJECTED, STATUS_PASSED, STATUS_SKIM]
-    rows = store.by_status(*statuses, limit=limit)
+    # Papers only friends' sources fetched aren't Roz's business: park them as friends_only. If one
+    # of her own sources later sees the same paper, its sources change and it is triaged then.
+    rows = []
+    for r in store.by_status(*statuses, limit=limit):
+        if not is_friend_only(r["sources"]):
+            rows.append(r)
+        elif r["status"] != STATUS_FRIENDS_ONLY:
+            store.update(r["id"], status=STATUS_FRIENDS_ONLY)
     stats = TriageStats()
     if not rows:
         return stats

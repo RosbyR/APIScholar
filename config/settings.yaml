@@ -56,3 +56,6 @@ deliver:
     enabled: true
     notebook: "AI Agents"    # must already be open in OneNote desktop
     section: "Paper Digests" # created if missing; one page per digest
+
+friends:                     # invite-only Jev feeds for friends (see src/paperbot/friends.py)
+  max_papers_per_run: 1500   # Jev cap per friend per `paperbot run` (~$0.06 at ~1,000 tokens/paper)

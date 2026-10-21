@@ -99,6 +99,50 @@ CREATE TABLE IF NOT EXISTS deliveries (       -- each digest file is pushed to e
     at         TEXT NOT NULL,
     PRIMARY KEY (digest, channel)
 );
+
+CREATE TABLE IF NOT EXISTS users (            -- friends with invite links (see friends.py)
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    name             TEXT NOT NULL,
+    token            TEXT NOT NULL UNIQUE,    -- secret in their invite link / cookie
+    created_at       TEXT NOT NULL,
+    interests        TEXT,
+    topics           TEXT NOT NULL DEFAULT '[]',
+    arxiv_categories TEXT NOT NULL DEFAULT '[]',
+    search_phrases   TEXT NOT NULL DEFAULT '[]',
+    threshold        REAL,                    -- NULL until calibrated from their labels
+    setup_at         TEXT,
+    last_seen        TEXT,
+    disabled         INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS user_scores (      -- Jev answers per friend (their own question set)
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    paper_id   TEXT NOT NULL REFERENCES papers(id),
+    score      REAL NOT NULL,
+    confidence REAL,
+    answers    TEXT NOT NULL,
+    model      TEXT,
+    scored_at  TEXT NOT NULL,
+    PRIMARY KEY (user_id, paper_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_scores_score ON user_scores(user_id, score);
+
+CREATE TABLE IF NOT EXISTS user_labels (      -- friends' training labels and feed votes
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    paper_id   TEXT NOT NULL REFERENCES papers(id),
+    relevant   INTEGER NOT NULL,
+    at         TEXT NOT NULL,
+    source     TEXT NOT NULL,                 -- train | feed
+    PRIMARY KEY (user_id, paper_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_usage (       -- Jev spend per friend per day
+    user_id      INTEGER NOT NULL REFERENCES users(id),
+    day          TEXT NOT NULL,
+    papers       INTEGER NOT NULL DEFAULT 0,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+);
 """
 
 

@@ -36,7 +36,7 @@ def cmd_harvest(cfg: Config, args) -> int:
     from .harvest import build_sources, make_client, run_harvest
     store = _store(cfg)
     with make_client(cfg) as client:
-        stats = run_harvest(cfg, store, build_sources(cfg, client))
+        stats = run_harvest(cfg, store, build_sources(cfg, client, store))
     print(json.dumps(stats.per_source, indent=2))
     return 1 if any(s["errors"] for s in stats.per_source.values()) else 0
 
@@ -173,6 +173,50 @@ def cmd_pull_feedback(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_friends(cfg: Config, args) -> int:
+    """Jev-score new candidate papers for every friend (no Claude calls)."""
+    from .friends import run_friends
+    from .triage import make_jev_client
+    f = cfg.section("friends")
+    stats = run_friends(_store(cfg), make_jev_client(cfg), int(f.get("max_papers_per_run", 1500)),
+                        int(cfg.section("triage").get("concurrency", 8)))
+    for name, st in stats.items():
+        print(f"{name}: scored {st.scored}, errors {st.errors}, ${st.cost_usd:.4f}")
+    if not stats:
+        print("No friends set up yet.")
+    return 1 if any(st.errors for st in stats.values()) else 0
+
+
+def _public_url(cfg: Config) -> str | None:
+    p = cfg.db_path.parent / "public_url.txt"  # written by scripts/serve.ps1 for the current tunnel
+    return p.read_text(encoding="utf-8-sig").strip() if p.is_file() else None  # PS 5 writes a BOM
+
+
+def cmd_invite(cfg: Config, args) -> int:
+    """Create a friend's invite link, or list everyone's links for the current tunnel address."""
+    from urllib.parse import urlencode
+
+    from .friends import FriendError, create_friend, list_friends
+    store = _store(cfg)
+    base = _public_url(cfg) or "<site address>"
+    if args.name:
+        try:
+            created = [create_friend(store, args.name)]
+        except FriendError as e:
+            print(e, file=sys.stderr)
+            return 1
+    else:
+        created = list_friends(store)
+        if not created:
+            print('No friends yet. Run: paperbot invite "Their name"')
+    for f in created:
+        state = "disabled" if f.disabled else ("set up" if f.ready else "not set up yet")
+        print(f"{f.name} ({state}): {base}/join?{urlencode({'t': f.token})}")
+    if base == "<site address>":
+        print("Start scripts\serve.ps1 to get the site address (it changes each start).", file=sys.stderr)
+    return 0
+
+
 def cmd_run(cfg: Config, args) -> int:
     """Full pipeline under a single-instance lock (scheduled runs must not overlap)."""
     from .lock import LockHeld, RunLock
@@ -192,7 +236,8 @@ def cmd_run(cfg: Config, args) -> int:
 def _run_stages(cfg: Config, args) -> int:
     """Each stage runs even if an earlier one partly failed; the digest reports health."""
     rc = 0
-    for name, fn in (("harvest", cmd_harvest), ("triage", cmd_triage), ("debate", cmd_debate)):
+    for name, fn in (("harvest", cmd_harvest), ("triage", cmd_triage), ("debate", cmd_debate),
+                     ("friends", cmd_friends)):
         try:
             rc |= fn(cfg, args)
         except Exception as e:
@@ -340,6 +385,9 @@ def main(argv: list[str] | None = None) -> int:
     dv.set_defaults(fn=cmd_deliver)
     st = sub.add_parser("site", help="render digests into a static website (web/public by default)")
     st.add_argument("--out", help="output folder (default: <root>/web/public)"); st.set_defaults(fn=cmd_site)
+    sub.add_parser("friends", help="Jev-score new papers for friends (no Claude)").set_defaults(fn=cmd_friends)
+    iv = sub.add_parser("invite", help="create a friend's invite link; without a name, list all links")
+    iv.add_argument("name", nargs="?"); iv.set_defaults(fn=cmd_invite)
     sv = sub.add_parser("serve", help="serve the digest website locally (for a cloudflared quick tunnel)")
     sv.add_argument("--port", type=int, default=8765); sv.set_defaults(fn=cmd_serve)
     sub.add_parser("pull-feedback", help="import thumbs clicked on the website from Cloudflare D1"

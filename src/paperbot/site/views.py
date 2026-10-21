@@ -33,6 +33,7 @@ STATUS_HELP = {
     STATUS_TRIAGE_ERROR: "Jev failed, retried next run",
     STATUS_NEW: "not scored yet",
 }
+STATUS_HELP["friends_only"] = "fetched only for friends' feeds"
 SORTS = {"score": "jev_score DESC, first_seen DESC", "newest": "COALESCE(published, first_seen) DESC",
          "oldest": "COALESCE(published, first_seen) ASC"}
 

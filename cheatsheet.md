@@ -93,6 +93,34 @@ Tabs on the site:
   to the overflow, and the estimated Claude cost.
 - Click any title for its page: Jev's level probabilities and facets, your votes, the full debate.
 
+## Sharing with friends
+
+Friends get their own feed, scored by Jev only (no Claude), so it costs fractions of a cent per
+friend per day. The Friends tab shows each friend's Jev spend.
+
+1. Start the site (`scripts\serve.ps1`), open your link, go to **Friends**, type a name, and click
+   **Create invite link**. Send that link to that one person; it signs them in.
+2. They describe what they want, list up to 8 topics, and pick arXiv categories and/or search phrases.
+   Saving fetches the last week of papers for their sources and scores them, which takes a minute or
+   a few.
+3. **Train**: they answer 👍/👎 for about 40 papers spread across the score range (scores hidden).
+   After 20 labels with at least 3 👍, their cutoff sets itself and keeps updating as they vote.
+4. **My feed**: papers above their cutoff, newest first. 👍/👎 there keeps teaching it.
+
+New papers reach friends when you run `paperbot run` (it has a `friends` stage), or
+`paperbot harvest; paperbot friends` on its own.
+
+| Command | What it does |
+|---|---|
+| `paperbot invite "Name"` | Creates an invite and prints the link (uses the current tunnel address). |
+| `paperbot invite` | Lists everyone's links for the current address. Re-send these after a restart. |
+| `paperbot friends` | Jev-scores new papers for all friends (cap: `friends.max_papers_per_run`). |
+
+**The address changes every time the tunnel restarts.** Friends' invite tokens stay valid; send them
+the fresh links from the Friends page or `paperbot invite`. Disable someone on the Friends page to
+lock them out. Friends never see your digests, votes, bank or queue, and you can't see their pages
+without their link.
+
 ## In the cloud (optional, not set up)
 
 Start a run from GitHub (Actions → daily → Run workflow); there is no schedule. Digests appear on your Cloudflare Pages site. Setup
