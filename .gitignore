@@ -6,3 +6,9 @@ __pycache__/
 data/
 digests/
 logs/
+web/public/
+web/.wrangler/
+state.tar.gz
+data.bak-*/
+digests.bak-*/
+web/.dev.vars

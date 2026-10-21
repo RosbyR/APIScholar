@@ -1,0 +1,83 @@
+# paperbot run, started by hand: restore state from R2 -> pull website votes ->
+# harvest/triage/debate/digest -> save state to R2 -> rebuild and deploy the website to
+# Cloudflare Pages. One-time setup is in DEPLOY.md.
+name: daily
+
+on:
+  workflow_dispatch: {}   # "Run workflow" button on the Actions tab; no schedule
+
+# State lives in one R2 object, so runs must never overlap (replaces the local run lock).
+concurrency:
+  group: paperbot-state
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  WRANGLER: npx --yes wrangler@4.145.0
+  BUCKET: paperbot-state
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  PAPERBOT_D1_DATABASE_ID: ${{ vars.PAPERBOT_D1_DATABASE_ID }}
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - run: pip install -e .
+
+      - name: Restore state from R2
+        id: restore
+        # Fails the job if there is no saved state: seed it first with scripts/state-push.ps1,
+        # so a missing object can never silently start an empty database.
+        run: |
+          $WRANGLER r2 object get "$BUCKET/state/latest.tar.gz" --file state.tar.gz --remote
+          tar -xzf state.tar.gz
+          test -s data/paperbot.sqlite
+          rm -f data/paperbot.lock
+
+      - name: Pull website votes
+        continue-on-error: true
+        run: paperbot pull-feedback
+
+      - name: Run pipeline
+        id: pipeline
+        continue-on-error: true
+        env:
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PAPERBOT_CONTACT_EMAIL: ${{ secrets.PAPERBOT_CONTACT_EMAIL }}
+        run: paperbot -v run
+
+      - name: Save state to R2
+        if: always() && steps.restore.outcome == 'success'
+        run: |
+          python -c "import sqlite3; c = sqlite3.connect('data/paperbot.sqlite'); c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.close()"
+          tar -czf state.tar.gz --exclude=paperbot.lock data digests
+          $WRANGLER r2 object put "$BUCKET/state/backups/$(date -u +%Y-%m-%dT%H%M).tar.gz" --file state.tar.gz --remote
+          $WRANGLER r2 object put "$BUCKET/state/latest.tar.gz" --file state.tar.gz --remote
+
+      - name: Deploy website
+        if: always() && steps.restore.outcome == 'success'
+        run: |
+          paperbot site
+          sed -i "s/REPLACE_WITH_D1_DATABASE_ID/$PAPERBOT_D1_DATABASE_ID/" web/wrangler.toml
+          cd web && $WRANGLER pages deploy --branch main --commit-dirty=true
+
+      - name: Report pipeline failure
+        if: steps.pipeline.outcome == 'failure'
+        run: |
+          echo "::error::paperbot run exited non-zero; see the 'Run pipeline' log and the digest's health section."
+          exit 1

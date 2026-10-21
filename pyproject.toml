@@ -13,6 +13,7 @@ dependencies = [
   "feedparser>=6",
   "anthropic>=0.40",
   "pypdf>=4",
+  "markdown>=3.5",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +27,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "paperbot.deliver" = ["*.ps1"]
+"paperbot.site" = ["*.css", "*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

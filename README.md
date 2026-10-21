@@ -11,5 +11,6 @@ pytest
 paperbot run
 ```
 
+Runs daily in the cloud (GitHub Actions + Cloudflare Pages): see `DEPLOY.md`.
 All commands: see `cheatsheet.md`. Edit `config/profile.yaml` to change what counts as relevant. See `CLAUDE.md` for the
 architecture, design decisions, status, and next steps.

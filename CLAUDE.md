@@ -73,6 +73,10 @@ CLI (seed → triage → debate → digest → feedback → calibrate → label)
 | Run lock, `.env` loading | `lock.py`, `config.py` | yes | n/a |
 | Windows Task Scheduler scripts | `scripts/*.ps1` | parse-checked only | **not registered yet** |
 | OneNote delivery (`paperbot deliver`) | `deliver/`, `deliver/onenote_push.ps1` | yes (fake push) | yes — page created in AI Agents › Paper Digests (12 Oct 2026) |
+| Website build (`paperbot site`) | `site/` | yes | built from real digests; served by `wrangler pages dev` (21 Oct 2026) |
+| Website votes API (Pages Function + D1) | `web/functions/api/feedback.js`, `web/schema.sql` | no JS tests | local `wrangler pages dev` with local D1 only; **not deployed yet** |
+| Vote import (`paperbot pull-feedback`) | `feedback_sync.py` | yes (respx) | **no** — D1 REST response shape from docs |
+| Cloud run (GitHub Actions + R2 state + Pages deploy) | `.github/workflows/daily.yml`, `scripts/state-*.ps1` | no | **not run yet** — needs the one-time setup in `DEPLOY.md` |
 
 **Not built yet:** Semantic Scholar adapter, journal RSS adapter,
 prompt caching for the debate (see §6 step 5).
@@ -97,6 +101,7 @@ Environment variables (never put secrets in YAML):
 | `ANTHROPIC_API_KEY` | debate | Claude API |
 | `PAPERBOT_CONTACT_EMAIL` | harvest | Contact address in the arXiv User-Agent |
 | `PAPERBOT_ROOT` | optional | Project root containing `config/` (default: cwd) |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `PAPERBOT_D1_DATABASE_ID` | `pull-feedback` | Set as GitHub secrets/variable for the cloud run (see `DEPLOY.md`) |
 
 Also set `PAPERBOT_CONTACT_EMAIL` in `.env` (goes into the User-Agent for arXiv; falls back to
 `contact_email` in `config/settings.yaml`, but that file is committed, so prefer `.env`).
@@ -196,6 +201,19 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 - Each (digest file, channel) is delivered once (`deliveries` table); `--force` re-pushes.
   Requires Windows, OneNote desktop installed, the notebook open, and a logged-in session.
 - A second digest on the same day is written as `YYYY-MM-DD-2.md` (it used to overwrite the first).
+- **Cloud (primary since 21 Oct 2026, see `DEPLOY.md`):** a GitHub Action, started by hand
+  (`workflow_dispatch` only; the weekday cron was removed at Roz's request on 21 Oct 2026).
+  State (`data/` + `digests/`) is one tarball in R2 (`paperbot-state/state/latest.tar.gz`, plus
+  dated backups); the repo is public, so state never goes in git. The job restores state (and
+  fails if it is missing rather than starting an empty DB), runs `pull-feedback` then `run`, saves
+  state, and deploys `paperbot site` output to Cloudflare Pages, even when a stage failed.
+  Workflow `concurrency` replaces the run lock. OneNote is skipped off Windows.
+- Website: static HTML from the digest Markdown. Digest text is untrusted, so the Markdown is
+  HTML-escaped before conversion and only http(s) links survive. `paperbot feedback <id> up` lines
+  become 👍/👎 buttons posting to `/api/feedback` (append-only D1 table). `pull-feedback` imports
+  rows past the `feedback:d1` watermark via `add_feedback`, so votes are also calibration labels.
+- The site is protected by Cloudflare Access (email OTP). The function rejects requests without
+  `Cf-Access-Authenticated-User-Email` (fails closed) and only accepts JSON POSTs (CSRF).
 
 ---
 
@@ -243,7 +261,8 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
    Cheap win to try then: the reader+paper block is a shared prefix across the 4 debate turns —
    split it into its own content block with `cache_control` so rebuttals read it from cache.
    Also consider setting `output_config.effort` explicitly (Opus 5.5 defaults to `medium`).
-6. **Scheduling:** the run lock is built. Roz's machine is Windows: `scripts\install-schedule.ps1`
+6. **Scheduling:** none by design. Roz starts the cloud run by hand (`DEPLOY.md`); don't add a
+   cron trigger back unless asked. Old notes: the run lock is built. Roz's machine is Windows: `scripts\install-schedule.ps1`
    registers a weekday 06:00 (local) Task Scheduler job that runs `scripts\run-daily.ps1`
    (logs in `logs/`). Register it only after the live smoke tests pass and `.env` has keys.
    (On macOS use launchd; alternative: GitHub Actions cron with the DB persisted as an artifact.)
@@ -261,7 +280,9 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 
 - Tests never touch the network: mock HTTP with `respx`; use `FakeJev`/`FakeLLM`.
   When adding real-data fixtures, strip anything personal.
-- Never commit `.env`, `data/`, `digests/`, or `logs/` (see `.gitignore`).
+- Never commit `.env`, `data/`, `digests/`, or `logs/` (see `.gitignore`). The repo is public.
+- Local `wrangler pages dev` fails with D1 "internal error" under `...\Paper Bot\...` (space /
+  long path on Windows); copy `web/` to a short path like `C:\pbw` to test the function.
 - On Windows, always pass `encoding="utf-8"` to `read_text`/`write_text`/`open` (the default is cp1252).
 - `profile.yaml` is user-owned content; keep code free of hard-coded interests.
 - Keep the stage boundaries (harvest / triage / debate / digest) so each can be rerun alone.

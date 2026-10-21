@@ -131,6 +131,30 @@ def cmd_deliver(cfg: Config, args) -> int:
     return _deliver(cfg, path, force=args.force)
 
 
+def cmd_site(cfg: Config, args) -> int:
+    from .site import build_site
+    out = Path(args.out) if args.out else cfg.root / "web" / "public"
+    pages = build_site(cfg.digest_dir, out)
+    print(f"wrote {len(pages)} digest page(s) to {out}")
+    return 0
+
+
+def cmd_pull_feedback(cfg: Config, args) -> int:
+    """Import thumbs clicked on the website (Cloudflare D1) as feedback + calibration labels."""
+    import httpx
+
+    from .feedback_sync import pull_feedback
+    account = Config.env("CLOUDFLARE_ACCOUNT_ID", required=True)
+    database = Config.env("PAPERBOT_D1_DATABASE_ID", required=True)
+    token = Config.env("CLOUDFLARE_API_TOKEN", required=True)
+    with httpx.Client(timeout=30) as client:
+        stats = pull_feedback(_store(cfg), client, account, database, token)
+    print(f"imported {stats.imported} website vote(s)")
+    for pid in stats.unknown:
+        print(f"skipped vote for unknown paper {pid}", file=sys.stderr)
+    return 0
+
+
 def cmd_run(cfg: Config, args) -> int:
     """Full pipeline under a single-instance lock (scheduled runs must not overlap)."""
     from .lock import LockHeld, RunLock
@@ -296,6 +320,10 @@ def main(argv: list[str] | None = None) -> int:
     dv.add_argument("--file", help="digest file to deliver (default: newest in digests/)")
     dv.add_argument("--force", action="store_true", help="deliver again even if already delivered")
     dv.set_defaults(fn=cmd_deliver)
+    st = sub.add_parser("site", help="render digests into a static website (web/public by default)")
+    st.add_argument("--out", help="output folder (default: <root>/web/public)"); st.set_defaults(fn=cmd_site)
+    sub.add_parser("pull-feedback", help="import thumbs clicked on the website from Cloudflare D1"
+                   ).set_defaults(fn=cmd_pull_feedback)
     r = sub.add_parser("run"); r.set_defaults(fn=cmd_run, limit=None)
     sub.add_parser("status").set_defaults(fn=cmd_status)
     co = sub.add_parser("costs", help="Claude token usage and spend per day/model")

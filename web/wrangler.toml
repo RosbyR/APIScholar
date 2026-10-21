@@ -1,0 +1,11 @@
+# Cloudflare Pages project for the digest website. `paperbot site` writes ./public;
+# functions/ holds the feedback API. The daily GitHub Action deploys this folder.
+name = "paperbot"
+pages_build_output_dir = "./public"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "paperbot"
+# The workflow substitutes the GitHub variable PAPERBOT_D1_DATABASE_ID here at deploy time.
+database_id = "REPLACE_WITH_D1_DATABASE_ID"

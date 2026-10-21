@@ -8,6 +8,7 @@ the stage, or `paperbot run`, never duplicates a page.
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -39,6 +40,10 @@ def run_deliver(cfg: Config, store: Store, digest_path: Path, force: bool = Fals
     on = (cfg.section("deliver").get("onenote") or {})
     if not on.get("enabled"):
         stats.skipped.append("onenote: disabled")
+        return stats
+    if push is push_page and sys.platform != "win32":
+        # The scheduled cloud run is Linux; there the website is the delivery channel.
+        stats.skipped.append("onenote: needs Windows with OneNote desktop")
         return stats
     key = digest_path.name
     if not force and store.delivered(key, "onenote"):

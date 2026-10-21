@@ -72,7 +72,19 @@ Paper ids look like `arxiv:2610.09993` or `doi:10.1145/3843282.3844428`. Each di
 | `paperbot debate --id <id> --id <id>` | Debates exactly these papers and leaves the rest of the queue alone. Good for testing prompts. |
 | `paperbot <command> --help` | Built-in help for any command. |
 
-## Scheduling (Windows Task Scheduler)
+## In the cloud
+
+Start a run from GitHub (Actions → daily → Run workflow); there is no schedule. Digests appear on your Cloudflare Pages site. Setup
+and day-to-day use are in `DEPLOY.md`.
+
+| Command | What it does |
+|---|---|
+| `paperbot site` | Builds the website from `digests\` into `web\public\`. |
+| `paperbot pull-feedback` | Imports 👍/👎 votes from the website. Each cloud run does this itself. |
+| `scripts\state-pull.ps1` | Downloads the cloud database and digests over your local copies (keeps a `.bak`). |
+| `scripts\state-push.ps1` | Uploads your local database and digests to the cloud. Not while a cloud run is going. |
+
+## Scheduling on this PC (Windows Task Scheduler, replaced by the cloud run)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-schedule.ps1            # weekdays 06:00
