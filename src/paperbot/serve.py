@@ -138,7 +138,9 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
             self.send_header("X-Robots-Tag", "noindex")
             self.send_header("Content-Security-Policy", CSP)
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Referrer-Policy", "no-referrer")  # invite tokens must not leak via Referer
+            # Invite tokens and keys must not leak to other sites via Referer. Not "no-referrer": with
+            # that, browsers send `Origin: null` on same-origin form POSTs and every button breaks.
+            self.send_header("Referrer-Policy", "same-origin")
             for k, v in (headers or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -166,6 +168,11 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
             return f if f and not f.disabled else None
 
         def _same_origin(self) -> bool:
+            # Sec-Fetch-Site is set by the browser itself (pages can't forge it) and is the most
+            # reliable signal; fall back to Origin for browsers that don't send it.
+            site = self.headers.get("Sec-Fetch-Site")
+            if site:
+                return site in ("same-origin", "none")
             origin = self.headers.get("Origin")
             if not origin:
                 return True  # older browsers omit it on same-origin POSTs; SameSite=Lax still applies
@@ -310,6 +317,8 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
         def do_POST(self):
             url = urlsplit(self.path)
             if not self._same_origin():
+                log.warning("refused POST %s: Origin=%r Sec-Fetch-Site=%r Host=%r", url.path,
+                            self.headers.get("Origin"), self.headers.get("Sec-Fetch-Site"), self.headers.get("Host"))
                 return self._send(HTTPStatus.FORBIDDEN, "cross-origin request refused", "text/plain")
             if self._is_owner():
                 if url.path == "/api/feedback":

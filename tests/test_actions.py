@@ -148,3 +148,27 @@ def test_actions_owner_only(site, store):
     assert req(port, "POST", "/actions", {"action": "triage"}, cookie=f"pb_user={friend.token}")[0] == 404
     assert req(port, "POST", "/actions", {"action": "triage"}, cookie="")[0] == 403
     assert calls == []
+
+
+def test_browser_form_post_headers(site):
+    """Real browsers: same-origin form POSTs carry Sec-Fetch-Site: same-origin, and may carry
+    Origin: null (they did under Referrer-Policy: no-referrer, which broke every button)."""
+    port, calls, gate, jobs = site
+    gate.set()
+
+    def post(extra):
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        c.request("POST", "/actions", body="action=harvest&back=%2Fbank",
+                  headers={"Cookie": f"pb_key={KEY}", "Content-Type": "application/x-www-form-urlencoded", **extra})
+        r = c.getresponse()
+        r.read()
+        return r.status
+
+    assert post({"Origin": "null", "Sec-Fetch-Site": "same-origin"}) == 303
+    assert _wait(lambda: calls and calls[0][0] == "harvest")
+    assert _wait(lambda: not jobs.running(0))
+    assert post({"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"}) == 403
+    assert post({"Origin": "null"}) == 403  # no Sec-Fetch-Site and an opaque origin: refuse
+    assert len(calls) == 1
+    _, headers, _ = req(port, "GET", "/bank")
+    assert headers["Referrer-Policy"] == "same-origin"

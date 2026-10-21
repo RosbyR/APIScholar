@@ -82,6 +82,7 @@ Prints a link like `https://<random-words>.trycloudflare.com/?key=...`. Open it 
 The 👍/👎 buttons save straight into your database, the same as `paperbot feedback`. New digests
 show up without restarting. Keep the window open; Ctrl+C stops it. The link changes every start,
 and anyone without the key gets "forbidden". `paperbot serve` alone runs just the local server.
+If the paperbot server stops or crashes, `serve.ps1` restarts it on the same tunnel, so the link doesn't change.
 
 Tabs on the site:
 - **Digests**: each run's digest, with 👍/👎 on every paper.

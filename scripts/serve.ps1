@@ -1,6 +1,8 @@
 # Serves the digest website from this laptop through a Cloudflare quick tunnel.
 # Prints a public https://<random>.trycloudflare.com link with an access key; open it on your
 # phone/iPad. The link changes every time this starts. Ctrl+C stops both server and tunnel.
+# To load new code without changing the link, stop only the paperbot serve process; this
+# script restarts it on the same tunnel.
 #   powershell -ExecutionPolicy Bypass -File scripts\serve.ps1 [-Port 8765]
 
 param([int]$Port = 8765)
@@ -25,8 +27,13 @@ $bytes = New-Object byte[] 18
 $env:PAPERBOT_SERVE_KEY = [Convert]::ToBase64String($bytes).Replace("+", "-").Replace("/", "_")
 $env:PYTHONIOENCODING = "utf-8"
 
-$server = Start-Process -FilePath $exe -ArgumentList "--root", "`"$root`"", "serve", "--port", $Port `
-    -RedirectStandardOutput $serveLog -RedirectStandardError "$serveLog.err" -NoNewWindow -PassThru
+function Start-Server {
+    # Keep the previous run's error log: a restart is usually after a crash or a code update.
+    if (Test-Path "$serveLog.err") { Move-Item -Force "$serveLog.err" "$serveLog.prev.err" }
+    Start-Process -FilePath $exe -ArgumentList "--root", "`"$root`"", "serve", "--port", $Port `
+        -RedirectStandardOutput $serveLog -RedirectStandardError "$serveLog.err" -NoNewWindow -PassThru
+}
+$server = Start-Server
 $tunnel = Start-Process -FilePath $cf -ArgumentList "tunnel", "--no-autoupdate", "--url", "http://127.0.0.1:$Port" `
     -RedirectStandardError $tunnelLog -NoNewWindow -PassThru
 
@@ -46,8 +53,19 @@ try {
     Write-Host "Digests:  $url/?key=$($env:PAPERBOT_SERVE_KEY)" -ForegroundColor Green
     Write-Host "Local:    http://127.0.0.1:$Port/?key=$($env:PAPERBOT_SERVE_KEY)"
     Write-Host "Keep this window open. Ctrl+C stops the site. (A new tunnel can take ~30 s to resolve.)"
-    while (-not $server.HasExited -and -not $tunnel.HasExited) { Start-Sleep -Seconds 2 }
-    if ($server.HasExited) { Write-Warning "paperbot serve stopped; see $serveLog.err" }
+    # If paperbot serve stops (crash, or killed to pick up new code), start it again on the same
+    # port with the same key: the tunnel and its address stay, so nobody needs a new link.
+    $restarts = @()
+    while (-not $tunnel.HasExited) {
+        Start-Sleep -Seconds 2
+        if ($server.HasExited) {
+            $restarts = @($restarts | Where-Object { $_ -gt (Get-Date).AddMinutes(-2) }) + (Get-Date)
+            if ($restarts.Count -gt 5) { Write-Warning "paperbot serve keeps crashing; see $serveLog.prev.err"; break }
+            Write-Host "$(Get-Date -Format T) paperbot serve stopped (exit $($server.ExitCode)); restarting, same address."
+            Start-Sleep -Seconds 1
+            $server = Start-Server
+        }
+    }
     if ($tunnel.HasExited) { Write-Warning "cloudflared stopped; see $tunnelLog" }
 } finally {
     foreach ($p in $server, $tunnel) { if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force } }
