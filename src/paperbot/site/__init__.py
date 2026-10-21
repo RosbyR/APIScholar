@@ -94,18 +94,29 @@ def build_site(digest_dir: Path, out_dir: Path) -> list[DigestPage]:
     out_dir.mkdir(parents=True)
     for asset in ("style.css", "app.js"):
         shutil.copy(ASSETS / asset, out_dir / asset)
-    pages = []
+    pages = load_digests(digest_dir)
+    for page in pages:
+        (out_dir / f"{page.stem}.html").write_text(digest_html(page), encoding="utf-8")
+    (out_dir / "index.html").write_text(index_html(pages), encoding="utf-8")
+    return pages
+
+
+def load_digests(digest_dir: Path) -> list[DigestPage]:
     # Newest first; "2026-10-14-2" sorts before "2026-10-14", which is also the right order.
-    for path in sorted(digest_dir.glob("*.md"), key=lambda p: p.stem, reverse=True):
-        page = render_digest(path.read_text(encoding="utf-8"), path.stem)
-        (out_dir / f"{page.stem}.html").write_text(_page(page.title, page.body, back=True), encoding="utf-8")
-        pages.append(page)
+    return [render_digest(path.read_text(encoding="utf-8"), path.stem)
+            for path in sorted(digest_dir.glob("*.md"), key=lambda p: p.stem, reverse=True)]
+
+
+def digest_html(page: DigestPage) -> str:
+    return _page(page.title, page.body, back=True)
+
+
+def index_html(pages: list[DigestPage]) -> str:
     if pages:
         items = "\n".join(
             f'<li><a href="{html.escape(p.stem)}">{html.escape(p.title)}</a>'
             f'<span class="count">{p.papers} debated</span></li>' for p in pages)
-        index = f'<h1>Paper digests</h1>\n<ul class="digests">\n{items}\n</ul>'
+        body = f'<h1>Paper digests</h1>\n<ul class="digests">\n{items}\n</ul>'
     else:
-        index = "<h1>Paper digests</h1>\n<p>No digests yet.</p>"
-    (out_dir / "index.html").write_text(_page("Paper digests", index, back=False), encoding="utf-8")
-    return pages
+        body = "<h1>Paper digests</h1>\n<p>No digests yet.</p>"
+    return _page("Paper digests", body, back=False)

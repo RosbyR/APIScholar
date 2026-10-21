@@ -73,6 +73,7 @@ CLI (seed → triage → debate → digest → feedback → calibrate → label)
 | Run lock, `.env` loading | `lock.py`, `config.py` | yes | n/a |
 | Windows Task Scheduler scripts | `scripts/*.ps1` | parse-checked only | **not registered yet** |
 | OneNote delivery (`paperbot deliver`) | `deliver/`, `deliver/onenote_push.ps1` | yes (fake push) | yes — page created in AI Agents › Paper Digests (12 Oct 2026) |
+| Laptop website (`paperbot serve` + `scripts/serve.ps1` quick tunnel) | `serve.py` | yes (real HTTP on 127.0.0.1) | yes — served through a trycloudflare.com tunnel, key gate + pages checked (21 Oct 2026) |
 | Website build (`paperbot site`) | `site/` | yes | built from real digests; served by `wrangler pages dev` (21 Oct 2026) |
 | Website votes API (Pages Function + D1) | `web/functions/api/feedback.js`, `web/schema.sql` | no JS tests | local `wrangler pages dev` with local D1 only; **not deployed yet** |
 | Vote import (`paperbot pull-feedback`) | `feedback_sync.py` | yes (respx) | **no** — D1 REST response shape from docs |
@@ -201,7 +202,12 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 - Each (digest file, channel) is delivered once (`deliveries` table); `--force` re-pushes.
   Requires Windows, OneNote desktop installed, the notebook open, and a logged-in session.
 - A second digest on the same day is written as `YYYY-MM-DD-2.md` (it used to overwrite the first).
-- **Cloud (primary since 21 Oct 2026, see `DEPLOY.md`):** a GitHub Action, started by hand
+- **Laptop + quick tunnel (what Roz uses, 21 Oct 2026):** `scripts/serve.ps1` runs `paperbot serve`
+  (stdlib HTTP on 127.0.0.1, pages rendered per request from digests/, votes written straight to
+  SQLite via `add_feedback`) and `cloudflared tunnel --url` (random trycloudflare.com host, new each
+  start). Every request needs a per-start random key: `?key=` once, then a SameSite=Strict HttpOnly
+  cookie; POSTs must be JSON; strict CSP. No D1/R2/Actions involved.
+- **Cloud (built, not set up; see `DEPLOY.md`):** a GitHub Action, started by hand
   (`workflow_dispatch` only; the weekday cron was removed at Roz's request on 21 Oct 2026).
   State (`data/` + `digests/`) is one tarball in R2 (`paperbot-state/state/latest.tar.gz`, plus
   dated backups); the repo is public, so state never goes in git. The job restores state (and

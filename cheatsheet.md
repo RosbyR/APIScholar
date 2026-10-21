@@ -72,7 +72,18 @@ Paper ids look like `arxiv:2610.09993` or `doi:10.1145/3843282.3844428`. Each di
 | `paperbot debate --id <id> --id <id>` | Debates exactly these papers and leaves the rest of the queue alone. Good for testing prompts. |
 | `paperbot <command> --help` | Built-in help for any command. |
 
-## In the cloud
+## Reading digests on your phone (Cloudflare quick tunnel)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\serve.ps1
+```
+
+Prints a link like `https://<random-words>.trycloudflare.com/?key=...`. Open it on your phone or iPad.
+The 👍/👎 buttons save straight into your database, the same as `paperbot feedback`. New digests
+show up without restarting. Keep the window open; Ctrl+C stops it. The link changes every start,
+and anyone without the key gets "forbidden". `paperbot serve` alone runs just the local server.
+
+## In the cloud (optional, not set up)
 
 Start a run from GitHub (Actions → daily → Run workflow); there is no schedule. Digests appear on your Cloudflare Pages site. Setup
 and day-to-day use are in `DEPLOY.md`.

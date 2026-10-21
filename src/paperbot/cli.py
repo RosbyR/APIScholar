@@ -139,6 +139,24 @@ def cmd_site(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_serve(cfg: Config, args) -> int:
+    """Serve the digests (with working thumb buttons) on 127.0.0.1, for a Cloudflare quick tunnel."""
+    import os
+
+    from .serve import make_server, new_key
+    key = os.environ.get("PAPERBOT_SERVE_KEY") or new_key()
+    server = make_server(cfg.db_path, cfg.digest_dir, key, args.port)
+    print(f"Serving digests on http://127.0.0.1:{args.port}/?key={key}", flush=True)
+    print("Open that link once per browser; the key is then kept in a cookie. Ctrl+C stops.", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
 def cmd_pull_feedback(cfg: Config, args) -> int:
     """Import thumbs clicked on the website (Cloudflare D1) as feedback + calibration labels."""
     import httpx
@@ -322,6 +340,8 @@ def main(argv: list[str] | None = None) -> int:
     dv.set_defaults(fn=cmd_deliver)
     st = sub.add_parser("site", help="render digests into a static website (web/public by default)")
     st.add_argument("--out", help="output folder (default: <root>/web/public)"); st.set_defaults(fn=cmd_site)
+    sv = sub.add_parser("serve", help="serve the digest website locally (for a cloudflared quick tunnel)")
+    sv.add_argument("--port", type=int, default=8765); sv.set_defaults(fn=cmd_serve)
     sub.add_parser("pull-feedback", help="import thumbs clicked on the website from Cloudflare D1"
                    ).set_defaults(fn=cmd_pull_feedback)
     r = sub.add_parser("run"); r.set_defaults(fn=cmd_run, limit=None)
