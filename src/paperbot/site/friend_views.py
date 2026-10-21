@@ -72,11 +72,10 @@ def feed_page(store: Store, friend: fr.Friend, page: int, job_status: str | None
     for r in rows:
         meta = " · ".join(e(x) for x in (r["venue"], (r["published"] or "")[:10]) if x)
         items.append(f"""<li class="paper">
-<div class="row-top"><span class="score pass" title="Jev relevance for you">{r["score"]:.2f}</span><span class="meta">{meta}</span></div>
+<div class="row-top"><span class="score pass" style="--w:{100 * r["score"] / 4:.0f}%" title="Jev relevance for you">{r["score"]:.2f}</span><span class="meta">{meta}</span></div>
 {_link(r)}
 <div class="chips">{_chips(friend, r["answers"])}</div>
-<details><summary>Abstract</summary><p>{e(r["abstract"]) or "<em>(no abstract)</em>"}</p></details>
-{_buttons(r["id"])}
+<div class="card-foot"><details><summary>Abstract</summary><p>{e(r["abstract"]) or "<em>(no abstract)</em>"}</p></details>{_buttons(r["id"])}</div>
 </li>""")
     pages = max(1, -(-total // FEED_PAGE))
     pager = '<nav class="pager">' + (

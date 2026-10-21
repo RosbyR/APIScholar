@@ -80,7 +80,8 @@ def score_badge(score: float | None, threshold: float) -> str:
     if score is None:
         return '<span class="score none">–</span>'
     cls = "pass" if score >= threshold else "fail"
-    return f'<span class="score {cls}" title="Jev relevance (threshold {threshold})">{score:.2f}</span>'
+    return (f'<span class="score {cls}" style="--w:{100 * score / 4:.0f}%" '
+            f'title="Jev relevance (threshold {threshold})">{score:.2f}</span>')
 
 
 def status_badge(status: str) -> str:
@@ -108,8 +109,7 @@ def paper_item(ctx: Ctx, row, extra: str = "") -> str:
 <div class="row-top">{score_badge(row["jev_score"], ctx.threshold)}{status_badge(row["status"])}{extra}<span class="meta">{meta}</span></div>
 {paper_link(row)}
 <div class="chips">{facet_chips(answers)}</div>
-<details><summary>Abstract</summary><p>{abstract}</p></details>
-{buttons(row["id"])}
+<div class="card-foot"><details><summary>Abstract</summary><p>{abstract}</p></details>{buttons(row["id"])}</div>
 </li>"""
 
 
@@ -201,13 +201,14 @@ def bank_page(ctx: Ctx, params: dict[str, str]) -> tuple[str, str]:
         f'<div class="bar"><span class="lbl">{i} {e(names[i] if i < len(names) else "")}</span>'
         f'<span class="track"><span class="fill" style="width:{100 * n / peak:.1f}%"></span></span>'
         f'<span class="n">{n:,}</span></div>' for i, n in enumerate(hist))
-    status_links = " · ".join(f'<a href="bank{q(status=s)}">{e(s)} {counts[s]:,}</a>'
-                              for s in STATUSES if counts.get(s))
+    tiles = "".join(f'<a class="tile" href="bank{q(status=s)}" title="{e(STATUS_HELP.get(s, ""))}">'
+                    f'<span class="n">{counts[s]:,}</span><span class="l">{e(s.replace("_", " "))}</span></a>'
+                    for s in STATUSES if counts.get(s))
 
     def opt(value, label, current):
         return f'<option value="{e(value)}"{" selected" if value == current else ""}>{e(label)}</option>'
 
-    form = f"""<form class="filters" method="get" action="bank">
+    form = f"""<form class="filters card" method="get" action="bank">
 <input type="search" name="q" value="{e(text)}" placeholder="Search title or abstract">
 <select name="status">{opt("", "Any status", status)}{"".join(opt(s, s, status) for s in STATUSES)}</select>
 <select name="facet">{opt("", "Any facet", facet)}{"".join(opt(f, f.replace("_", " "), facet) for f in ctx.facets())}</select>
@@ -226,8 +227,8 @@ def bank_page(ctx: Ctx, params: dict[str, str]) -> tuple[str, str]:
 <!--actions-->
 <p class="lead">{scored:,} papers scored by Jev ({e(ctx.cfg.section("triage").get("jev_model", ""))}). Threshold
 {ctx.threshold}: green scores pass the gate. Facet chips are topic flags Jev rated ≥ 0.5.</p>
-<div class="hist">{bars}</div>
-<p class="statuses">{status_links}</p>
+<div class="tiles">{tiles}</div>
+<div class="hist card"><div class="hist-title">Relevance levels across the bank</div>{bars}</div>
 {form}{pager}
 <ul class="papers">{"".join(paper_item(ctx, r) for r in rows) or "<li>No papers match.</li>"}</ul>
 {pager if rows else ""}"""
