@@ -51,6 +51,30 @@ document.addEventListener("click", async (e) => {
   }
 });
 
+// Owner-only spam buttons: mark a card as spam (it fades out) or release it.
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest(".spam-btn");
+  if (!b) return;
+  const spam = b.dataset.spam === "1";
+  if (spam && !confirm("Mark this paper as spam? It won't be scored, debated or shown to friends.")) return;
+  b.disabled = true;
+  try {
+    const r = await fetch("/api/spam", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paper_id: b.dataset.id, spam }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const card = b.closest("li.paper");
+    if (card) card.classList.add("gone");
+    b.textContent = spam ? "Marked spam" : "Released";
+  } catch (err) {
+    b.disabled = false;
+    alert("Didn't work: " + err.message);
+  }
+});
+
 // Buttons that start paid work (Jev, Claude) ask first.
 document.addEventListener("submit", (e) => {
   const msg = e.target.dataset.confirm;

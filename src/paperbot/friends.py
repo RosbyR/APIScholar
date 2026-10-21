@@ -248,7 +248,7 @@ def candidates(store: Store, friend: Friend, limit: int, backfill_days: int = 7)
     for phrase in friend.phrases:
         match.append("(p.title LIKE ? OR p.abstract LIKE ?)")
         args += [f"%{phrase}%"] * 2
-    sql = (f"""SELECT p.* FROM papers p WHERE p.first_seen >= ? AND ({' OR '.join(match)})
+    sql = (f"""SELECT p.* FROM papers p WHERE p.first_seen >= ? AND p.status != 'spam' AND ({' OR '.join(match)})
                AND NOT EXISTS (SELECT 1 FROM user_scores s WHERE s.user_id = ? AND s.paper_id = p.id)
                ORDER BY COALESCE(p.published, p.first_seen) DESC LIMIT ?""")
     return list(store.conn.execute(sql, [since, *args, friend.id, limit]))
@@ -375,7 +375,8 @@ def next_training_paper(store: Store, user_id: int, rng=None):
     rng = rng or random.Random()
     rows = list(store.conn.execute(
         """SELECT p.*, s.score FROM user_scores s JOIN papers p ON p.id = s.paper_id
-           WHERE s.user_id = ? AND s.paper_id NOT IN (SELECT paper_id FROM user_labels WHERE user_id = ?)""",
+           WHERE s.user_id = ? AND p.status != 'spam'
+             AND s.paper_id NOT IN (SELECT paper_id FROM user_labels WHERE user_id = ?)""",
         (user_id, user_id)))
     if not rows:
         return None
@@ -421,6 +422,7 @@ def onboard(cfg, user_id: int, report, score_limit: int = 600, backfill_days: in
     from .harvest.arxiv import ArxivAPI
     from .harvest.openalex import OpenAlex
     from .http import RateLimiter
+    from .spam import SpamRules, check_new
     from .triage import make_jev_client
 
     store = Store(cfg.db_path)
@@ -431,6 +433,7 @@ def onboard(cfg, user_id: int, report, score_limit: int = 600, backfill_days: in
         own = cfg.profile.get("sources", {}) or {}
         new_cats = [c for c in friend.categories if c not in (own.get("arxiv_categories") or [])]
         since = datetime.now(timezone.utc) - timedelta(days=backfill_days)
+        rules = SpamRules.from_settings(cfg.section("spam"))
         added = 0
         with make_client(cfg) as client:
             sources = []
@@ -448,7 +451,10 @@ def onboard(cfg, user_id: int, report, score_limit: int = 600, backfill_days: in
                 try:
                     for p in src.fetch(since):
                         if p.title:
-                            added += store.upsert(p)[1]
+                            pid, is_new = store.upsert(p)
+                            added += is_new
+                            if is_new:
+                                check_new(store, pid, p, rules)
                 except Exception as e:  # one failing source shouldn't block scoring the rest
                     log.warning("onboarding fetch %s for friend %s failed: %s", src.name, user_id, e)
         report(f"Fetched {added} new papers. Scoring with Jev...")

@@ -17,6 +17,7 @@ STATUS_SKIM = "skim"                  # passed, but over the debate cap: listed 
 STATUS_DEBATE_ERROR = "debate_error"  # LLM failure; retried next run
 STATUS_VETOED = "vetoed"              # judge said not worth reading
 STATUS_ACCEPTED = "accepted"          # judge kept it; goes in next digest
+STATUS_SPAM = "spam"                  # caught by spam.py at harvest; never triaged or debated
 STATUS_FRIENDS_ONLY = "friends_only"  # fetched only for friends; never triaged with Roz's rubric
 STATUS_DIGESTED = "digested"          # delivered in a digest
 

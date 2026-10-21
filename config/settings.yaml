@@ -59,3 +59,12 @@ deliver:
 
 friends:                     # invite-only Jev feeds for friends (see src/paperbot/friends.py)
   max_papers_per_run: 1500   # Jev cap per friend per `paperbot run` (~$0.06 at ~1,000 tokens/paper)
+
+spam:                        # harvest-time filter (src/paperbot/spam.py); flagged papers get status spam
+  enabled: true
+  # Case-insensitive regexes matched against title and venue. Add to this when junk gets through,
+  # then run `paperbot spam --dry-run` and `paperbot spam` to re-check stored papers.
+  title_patterns:
+    - '\bSTARLI\b'           # keyword-stuffed Zenodo "monographs", author "33" (Oct 2026)
+  # Open-upload venues where an all-caps title counts as spam (substring match on venue).
+  repositories: [zenodo, figshare, osf, researchgate, preprints.org, ssrn]

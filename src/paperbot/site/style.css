@@ -257,3 +257,10 @@ label.cat code { background: none; color: var(--muted); font-size: 0.75rem; padd
   article.entry, section.block, article.card { padding: 1rem; }
   .card-foot .fb { margin-left: 0; }
 }
+
+/* ---- spam button (owner) ---- */
+.spam-btn { font-size: 0.85rem; padding: 0.35rem 0.6rem; box-shadow: none; color: var(--muted); }
+.spam-btn:hover { border-color: var(--down); color: var(--down); }
+.spam-btn[data-spam="0"] { color: var(--up); }
+li.paper.gone { opacity: 0.35; transition: opacity 0.3s ease; }
+.st-spam { background: var(--down-soft); color: var(--down); }

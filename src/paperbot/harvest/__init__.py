@@ -16,6 +16,7 @@ import httpx
 from ..config import Config
 from ..http import RateLimiter, user_agent
 from ..models import Paper
+from ..spam import SpamRules, check_new
 from ..store import Store
 from .arxiv import ArxivAPI, ArxivRSS
 from .openalex import OpenAlex
@@ -91,25 +92,28 @@ def run_harvest(cfg: Config, store: Store, sources: list[Source], now: datetime 
     h = cfg.section("harvest")
     overlap, first = h.get("lookback_overlap_days", 2), h.get("first_run_days", 7)
     stats = HarvestStats()
+    rules = SpamRules.from_settings(cfg.section("spam"))
     for src in sources:
-        fetched = new = 0
+        fetched = new = spam = 0
         try:
             since = _since(store, src.name, overlap, first, now)
             for paper in src.fetch(since):
                 fetched += 1
                 if not paper.title:
                     continue
-                _, is_new = store.upsert(paper)
+                pid, is_new = store.upsert(paper)
                 new += is_new
+                if is_new and check_new(store, pid, paper, rules):
+                    spam += 1
         except Exception as e:  # isolate sources; do not advance watermark
             log.exception("harvest source %s failed", src.name)
-            stats.per_source[src.name] = {"fetched": fetched, "new": new, "errors": 1}
+            stats.per_source[src.name] = {"fetched": fetched, "new": new, "errors": 1, "spam": spam}
             store.log_run(f"harvest:{src.name}", fetched, new, 1, note=repr(e)[:500])
             continue
         store.set_watermark(src.name, now.replace(microsecond=0).isoformat())
-        stats.per_source[src.name] = {"fetched": fetched, "new": new, "errors": 0}
-        store.log_run(f"harvest:{src.name}", fetched, new, 0)
-        log.info("harvest %s: fetched=%d new=%d", src.name, fetched, new)
+        stats.per_source[src.name] = {"fetched": fetched, "new": new, "errors": 0, "spam": spam}
+        store.log_run(f"harvest:{src.name}", fetched, new, 0, note=f"spam={spam}" if spam else None)
+        log.info("harvest %s: fetched=%d new=%d spam=%d", src.name, fetched, new, spam)
     return stats
 
 
@@ -121,10 +125,13 @@ def backfill_arxiv(cfg: Config, store: Store, client: httpx.Client, days: int) -
     now = datetime.now(timezone.utc)
     stats = HarvestStats()
     fetched = new = 0
+    rules = SpamRules.from_settings(cfg.section("spam"))
     for paper in src.fetch(now - timedelta(days=days)):
         fetched += 1
-        _, is_new = store.upsert(paper)
+        pid, is_new = store.upsert(paper)
         new += is_new
+        if is_new:
+            check_new(store, pid, paper, rules)
     stats.per_source[src.name] = {"fetched": fetched, "new": new, "errors": 0}
     store.log_run("harvest:arxiv_api_backfill", fetched, new, 0)
     return stats

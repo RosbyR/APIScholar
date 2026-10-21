@@ -93,9 +93,9 @@ def test_sources_over_http_and_dedup(cfg, store, fixtures):
             OpenAlex(client, RateLimiter(0.0), ["semiconductor traceability"], api_key="k"),
         ]
         stats = run_harvest(cfg, store, sources)
-    assert stats.per_source["arxiv_rss"] == {"fetched": 2, "new": 2, "errors": 0}
+    assert stats.per_source["arxiv_rss"] == {"fetched": 2, "new": 2, "errors": 0, "spam": 0}
     # OpenAlex: erratum skipped; the arXiv paper is a duplicate (matched via arXiv DOI)
-    assert stats.per_source["openalex"] == {"fetched": 2, "new": 1, "errors": 0}
+    assert stats.per_source["openalex"] == {"fetched": 2, "new": 1, "errors": 0, "spam": 0}
     row = store.get("arxiv:2610.04211")
     assert set(json.loads(row["sources"])) == {"arxiv_rss", "openalex"}
     assert row["openalex_id"] == "W4400000001"
@@ -132,7 +132,7 @@ def test_failing_source_isolated_and_watermark_not_advanced(cfg, store):
 
     stats = run_harvest(cfg, store, [Boom(), Ok()])
     assert stats.per_source["boom"]["errors"] == 1
-    assert stats.per_source["ok"] == {"fetched": 1, "new": 1, "errors": 0}
+    assert stats.per_source["ok"] == {"fetched": 1, "new": 1, "errors": 0, "spam": 0}
     assert store.get_watermark("boom") is None
     assert store.get_watermark("ok") is not None
 

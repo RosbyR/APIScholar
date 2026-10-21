@@ -217,6 +217,23 @@ def cmd_invite(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_spam(cfg: Config, args) -> int:
+    """Re-check papers already in the database against the spam rules, or release one."""
+    from .spam import SpamRules, release, rescan
+    store = _store(cfg)
+    if args.release:
+        ok = release(store, args.release)
+        print(f"released {args.release}; the next triage scores it" if ok else f"{args.release} is not marked spam")
+        return 0 if ok else 1
+    found = rescan(store, SpamRules.from_settings(cfg.section("spam")), dry_run=args.dry_run)
+    for pid, old, title, reasons in found:
+        print(f"{pid} [{old}] {title[:90]}")
+        print(f"    {'; '.join(reasons)}")
+    verb = "would mark" if args.dry_run else "marked"
+    print(f"{verb} {len(found)} paper(s) as spam")
+    return 0
+
+
 def cmd_run(cfg: Config, args) -> int:
     """Full pipeline under a single-instance lock (scheduled runs must not overlap)."""
     from .lock import LockHeld, RunLock
@@ -388,6 +405,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("friends", help="Jev-score new papers for friends (no Claude)").set_defaults(fn=cmd_friends)
     iv = sub.add_parser("invite", help="create a friend's invite link; without a name, list all links")
     iv.add_argument("name", nargs="?"); iv.set_defaults(fn=cmd_invite)
+    sp = sub.add_parser("spam", help="re-check stored papers against the spam rules (settings.yaml spam:)")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.add_argument("--release", metavar="ID", help="not spam after all: back to new so triage scores it")
+    sp.set_defaults(fn=cmd_spam)
     sv = sub.add_parser("serve", help="serve the digest website locally (for a cloudflared quick tunnel)")
     sv.add_argument("--port", type=int, default=8765); sv.set_defaults(fn=cmd_serve)
     sub.add_parser("pull-feedback", help="import thumbs clicked on the website from Cloudflare D1"

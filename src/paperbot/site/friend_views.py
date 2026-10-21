@@ -56,10 +56,11 @@ def feed_page(store: Store, friend: fr.Friend, page: int, job_status: str | None
     t = friend.effective_threshold
     scored = c.execute("SELECT COUNT(*) FROM user_scores WHERE user_id = ?", (friend.id,)).fetchone()[0]
     n_labels, n_pos = fr.label_counts(store, friend.id)
-    total = c.execute("SELECT COUNT(*) FROM user_scores WHERE user_id = ? AND score >= ?", (friend.id, t)).fetchone()[0]
+    total = c.execute("SELECT COUNT(*) FROM user_scores s JOIN papers p ON p.id = s.paper_id "
+                      "WHERE s.user_id = ? AND s.score >= ? AND p.status != 'spam'", (friend.id, t)).fetchone()[0]
     rows = list(c.execute(
         """SELECT p.*, s.score, s.answers FROM user_scores s JOIN papers p ON p.id = s.paper_id
-           WHERE s.user_id = ? AND s.score >= ? ORDER BY COALESCE(p.published, p.first_seen) DESC, s.score DESC
+           WHERE s.user_id = ? AND s.score >= ? AND p.status != 'spam' ORDER BY COALESCE(p.published, p.first_seen) DESC, s.score DESC
            LIMIT ? OFFSET ?""", (friend.id, t, FEED_PAGE, (page - 1) * FEED_PAGE)))
     if friend.threshold is None:
         calib = (f'Showing papers Jev scores at least {t} out of 4 (the default). '

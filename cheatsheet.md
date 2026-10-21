@@ -101,6 +101,23 @@ Buttons (they run in the background, one at a time, and never overlap a `paperbo
   `paperbot debate`, which moves overflow to the skim list. *Write digest* puts kept papers in a new digest.
 - The status box updates itself while a job runs.
 
+## Spam
+
+Every newly harvested paper is checked against the rules in `settings.yaml` under `spam:`. These are
+authors that aren't names (like "33"), all-caps titles from open upload sites like Zenodo, and a
+blocklist of title patterns. Caught papers get status `spam`: never scored, debated, or shown to
+friends. See them on the Jev bank's **Spam** tile.
+
+| Command / button | What it does |
+|---|---|
+| 🚫 on a card (bank or queue) | Marks that paper as spam. |
+| **Not spam** on a spam card | Releases it; the next Jev scoring re-scores it. |
+| `paperbot spam --dry-run` | Shows what the rules would catch among stored papers. |
+| `paperbot spam` | Re-checks stored papers (not debated or digested ones) and marks matches. |
+| `paperbot spam --release <id>` | Same as **Not spam**. |
+
+When junk gets through, add a pattern under `spam.title_patterns`, then run `paperbot spam`.
+
 ## Sharing with friends
 
 Friends get their own feed, scored by Jev only (no Claude), so it costs fractions of a cent per

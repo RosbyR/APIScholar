@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from . import actions as act
 from . import friends as fr
+from . import spam as spam_mod
 from .config import Config, load_config
 from .site import ASSETS, _page, digest_html, index_html, load_digests, render_digest
 from .site import friend_views, views
@@ -327,6 +328,8 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
                     return self._owner_friends_post()
                 if url.path == "/actions":
                     return self._owner_action()
+                if url.path == "/api/spam":
+                    return self._owner_spam()
                 return self._send(HTTPStatus.NOT_FOUND, "not found", "text/plain")
             store = Store(db_path)
             try:
@@ -385,6 +388,30 @@ def make_handler(cfg: Config, key: str, onboard: Callable = fr.onboard,
             finally:
                 store.close()
             self._html(title, body)
+
+        def _owner_spam(self) -> None:
+            body = self._json()
+            if body is None:
+                return
+            pid, flag = body.get("paper_id"), body.get("spam")
+            if not isinstance(pid, str) or flag not in (True, False):
+                return self._send(HTTPStatus.BAD_REQUEST, "need paper_id and spam true/false", "text/plain")
+            store = Store(db_path)
+            try:
+                row = store.get(pid)
+                if row is None:
+                    return self._send(HTTPStatus.NOT_FOUND, "no such paper", "text/plain")
+                if flag:
+                    if row["status"] not in spam_mod.RESCANNABLE:
+                        return self._send(HTTPStatus.CONFLICT, f"can't mark a {row['status']} paper as spam",
+                                          "text/plain")
+                    spam_mod.mark(store, pid, ["marked by hand"])
+                elif not spam_mod.release(store, pid):
+                    return self._send(HTTPStatus.CONFLICT, "not marked as spam", "text/plain")
+            finally:
+                store.close()
+            log.info("%s %s", "marked spam:" if flag else "released from spam:", pid)
+            self._send(HTTPStatus.OK, json.dumps({"ok": True}), "application/json")
 
         def _owner_action(self) -> None:
             form = self._form()

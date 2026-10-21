@@ -16,12 +16,12 @@ from urllib.parse import urlencode
 
 from ..config import Config
 from ..models import (STATUS_ACCEPTED, STATUS_DEBATE_ERROR, STATUS_DIGESTED, STATUS_NEW, STATUS_PASSED,
-                      STATUS_REJECTED, STATUS_SKIM, STATUS_TRIAGE_ERROR, STATUS_VETOED)
+                      STATUS_REJECTED, STATUS_SKIM, STATUS_SPAM, STATUS_TRIAGE_ERROR, STATUS_VETOED)
 from ..store import Store
 
 PAGE_SIZE = 50
 STATUSES = [STATUS_PASSED, STATUS_DEBATE_ERROR, STATUS_ACCEPTED, STATUS_DIGESTED, STATUS_SKIM, STATUS_VETOED,
-            STATUS_REJECTED, STATUS_TRIAGE_ERROR, STATUS_NEW]
+            STATUS_REJECTED, STATUS_TRIAGE_ERROR, STATUS_NEW, STATUS_SPAM]
 STATUS_HELP = {
     STATUS_PASSED: "passed the gate, waiting for debate",
     STATUS_DEBATE_ERROR: "debate failed, retried next run",
@@ -32,6 +32,7 @@ STATUS_HELP = {
     STATUS_REJECTED: "below the Jev threshold",
     STATUS_TRIAGE_ERROR: "Jev failed, retried next run",
     STATUS_NEW: "not scored yet",
+    STATUS_SPAM: "caught by the spam filter; never triaged or debated",
 }
 STATUS_HELP["friends_only"] = "fetched only for friends' feeds"
 SORTS = {"score": "jev_score DESC, first_seen DESC", "newest": "COALESCE(published, first_seen) DESC",
@@ -67,6 +68,16 @@ class Ctx:
 
     def facets(self) -> list[str]:
         return list((self.cfg.profile.get("facets") or {}).keys())
+
+
+def spam_button(row) -> str:
+    """Owner-only: mark a paper as spam (or release it when it already is)."""
+    if row["status"] == STATUS_SPAM:
+        return (f'<button type="button" class="spam-btn" data-id="{e(row["id"])}" data-spam="0" '
+                f'title="{e(row["error"] or "")}">Not spam</button>')
+    if row["status"] in ("new", "triage_error", "rejected", "passed", "skim", "friends_only", "debate_error"):
+        return f'<button type="button" class="spam-btn" data-id="{e(row["id"])}" data-spam="1" title="Mark as spam">🚫</button>'
+    return ""
 
 
 def buttons(pid: str) -> str:
@@ -109,7 +120,7 @@ def paper_item(ctx: Ctx, row, extra: str = "") -> str:
 <div class="row-top">{score_badge(row["jev_score"], ctx.threshold)}{status_badge(row["status"])}{extra}<span class="meta">{meta}</span></div>
 {paper_link(row)}
 <div class="chips">{facet_chips(answers)}</div>
-<div class="card-foot"><details><summary>Abstract</summary><p>{abstract}</p></details>{buttons(row["id"])}</div>
+<div class="card-foot"><details><summary>Abstract</summary><p>{abstract}</p></details>{spam_button(row)}{buttons(row["id"])}</div>
 </li>"""
 
 
@@ -172,7 +183,7 @@ def bank_page(ctx: Ctx, params: dict[str, str]) -> tuple[str, str]:
     except ValueError:
         page = 1
 
-    where, args = ["jev_score IS NOT NULL"], []
+    where, args = ["(jev_score IS NOT NULL OR status = 'spam')"], []
     if status in STATUSES:
         where.append("status = ?"); args.append(status)
     if min_score is not None:

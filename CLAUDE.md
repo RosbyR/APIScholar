@@ -203,6 +203,11 @@ paperbot feedback <id> up|down [--note ...]   # also becomes a calibration label
 - Each (digest file, channel) is delivered once (`deliveries` table); `--force` re-pushes.
   Requires Windows, OneNote desktop installed, the notebook open, and a logged-in session.
 - A second digest on the same day is written as `YYYY-MM-DD-2.md` (it used to overwrite the first).
+- **Spam filter (21 Oct 2026):** `spam.py`, applied to every newly inserted paper in harvest, backfill
+  and friends' onboarding. Flags: authors listed but none with ≥2 letters; mostly upper-case title from
+  an open repository venue; `spam.title_patterns` regexes. Status `spam` is never triaged/debated/shown
+  to friends. Prompted by keyword-stuffed Zenodo "STARLI" records (author "33") scoring 3.4–3.7 and
+  topping the debate queue. `paperbot spam` rescans stored papers (never debated/digested ones).
 - **Laptop + quick tunnel (what Roz uses, 21 Oct 2026):** `scripts/serve.ps1` runs `paperbot serve`
   (stdlib HTTP on 127.0.0.1, pages rendered per request from digests/, votes written straight to
   SQLite via `add_feedback`) and `cloudflared tunnel --url` (random trycloudflare.com host, new each
