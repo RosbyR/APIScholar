@@ -38,7 +38,8 @@ npx wrangler@4.145.0 login
 npx wrangler@4.145.0 r2 bucket create paperbot-state
 npx wrangler@4.145.0 d1 create paperbot                 # note the database_id it prints
 npx wrangler@4.145.0 d1 execute paperbot --remote --file web/schema.sql
-npx wrangler@4.145.0 pages project create paperbot --production-branch main
+paperbot site; cd web                              # project create must run next to the site
+npx wrangler@4.145.0 pages project create paperbot --production-branch main; cd ..
 ```
 
 The last command prints the site address, normally `https://paperbot.pages.dev`. If that name
