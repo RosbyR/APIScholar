@@ -23,7 +23,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from .site import ASSETS, digest_html, index_html, load_digests, render_digest
+from .config import Config, load_config
+from .site import ASSETS, _page, digest_html, index_html, load_digests, render_digest
+from .site import views
 from .store import Store
 
 log = logging.getLogger(__name__)
@@ -31,7 +33,9 @@ log = logging.getLogger(__name__)
 COOKIE = "pb_key"
 STEM_RE = re.compile(r"^/([\w-]+?)(?:\.html)?$")
 ASSET_TYPES = {"/style.css": "text/css; charset=utf-8", "/app.js": "text/javascript; charset=utf-8"}
-CSP = "default-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+# Inline style attributes are allowed for the score bars; all database text is HTML-escaped.
+CSP = ("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; "
+       "form-action 'self'; frame-ancestors 'none'")
 
 
 def new_key() -> str:
@@ -39,12 +43,14 @@ def new_key() -> str:
 
 
 def latest_votes(store: Store) -> dict[str, int]:
-    rows = store.conn.execute(
-        "SELECT paper_id, rating FROM feedback WHERE id IN (SELECT MAX(id) FROM feedback GROUP BY paper_id)")
-    return {r[0]: r[1] for r in rows}
+    """Current vote per paper as +1/-1, from labels: thumbs write labels too, and hand labels
+    from `paperbot label` count as votes."""
+    return {r[0]: 1 if r[1] else -1 for r in store.conn.execute("SELECT paper_id, relevant FROM labels")}
 
 
-def make_handler(db_path: Path, digest_dir: Path, key: str) -> type[BaseHTTPRequestHandler]:
+def make_handler(cfg: Config, key: str) -> type[BaseHTTPRequestHandler]:
+    db_path, digest_dir = cfg.db_path, cfg.digest_dir
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "paperbot"
         sys_version = ""
@@ -103,12 +109,35 @@ def make_handler(db_path: Path, digest_dir: Path, key: str) -> type[BaseHTTPRequ
                 finally:
                     store.close()
             if url.path in ("/", "/index.html"):
-                return self._send(HTTPStatus.OK, index_html(load_digests(digest_dir)))
+                return self._send(HTTPStatus.OK, index_html(load_digests(digest_dir), views.nav("./")))
+            if url.path in ("/votes", "/bank", "/queue", "/paper"):
+                return self._view(url.path, {k: v[0] for k, v in parse_qs(url.query).items()})
             m = STEM_RE.match(url.path)
             md = digest_dir / f"{m.group(1)}.md" if m else None
             if md and md.is_file():
-                return self._send(HTTPStatus.OK, digest_html(render_digest(md.read_text(encoding="utf-8"), md.stem)))
+                page = render_digest(md.read_text(encoding="utf-8"), md.stem)
+                return self._send(HTTPStatus.OK, digest_html(page, views.nav("")))
             self._send(HTTPStatus.NOT_FOUND, "<p>Not found. <a href=\"/\">All digests</a></p>")
+
+        def _view(self, path: str, params: dict[str, str]):
+            # Reload config each time so threshold/profile edits show without a restart.
+            store = Store(db_path)
+            try:
+                ctx = views.Ctx(load_config(cfg.root), store)
+                if path == "/votes":
+                    result = views.votes_page(ctx, params.get("show", "relevant"))
+                elif path == "/bank":
+                    result = views.bank_page(ctx, params)
+                elif path == "/queue":
+                    result = views.queue_page(ctx)
+                else:
+                    result = views.paper_page(ctx, params.get("id", ""))
+            finally:
+                store.close()
+            if result is None:
+                return self._send(HTTPStatus.NOT_FOUND, _page("Not found", views.nav("") + "<p>No such paper.</p>", False))
+            title, body = result
+            self._send(HTTPStatus.OK, _page(title, body, back=False))
 
         def do_POST(self):
             url = urlsplit(self.path)
@@ -142,5 +171,5 @@ def make_handler(db_path: Path, digest_dir: Path, key: str) -> type[BaseHTTPRequ
     return Handler
 
 
-def make_server(db_path: Path, digest_dir: Path, key: str, port: int) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(db_path, digest_dir, key))
+def make_server(cfg: Config, key: str, port: int) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(cfg, key))

@@ -83,6 +83,16 @@ The 👍/👎 buttons save straight into your database, the same as `paperbot fe
 show up without restarting. Keep the window open; Ctrl+C stops it. The link changes every start,
 and anyone without the key gets "forbidden". `paperbot serve` alone runs just the local server.
 
+Tabs on the site:
+- **Digests**: each run's digest, with 👍/👎 on every paper.
+- **My votes**: everything you've labeled (hand labels and thumbs), relevant vs not, and how many of
+  your relevant papers score under the gate threshold, i.e. the ones the gate would miss.
+- **Jev bank**: every Jev-scored paper, with search, filters (status, facet, min score, voted or not),
+  a score histogram, and vote buttons, so you can label straight from here.
+- **Debate queue**: passed papers in the order the next run debates them, the cap line, what happens
+  to the overflow, and the estimated Claude cost.
+- Click any title for its page: Jev's level probabilities and facets, your votes, the full debate.
+
 ## In the cloud (optional, not set up)
 
 Start a run from GitHub (Actions → daily → Run workflow); there is no schedule. Digests appear on your Cloudflare Pages site. Setup

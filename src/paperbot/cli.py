@@ -145,7 +145,7 @@ def cmd_serve(cfg: Config, args) -> int:
 
     from .serve import make_server, new_key
     key = os.environ.get("PAPERBOT_SERVE_KEY") or new_key()
-    server = make_server(cfg.db_path, cfg.digest_dir, key, args.port)
+    server = make_server(cfg, key, args.port)
     print(f"Serving digests on http://127.0.0.1:{args.port}/?key={key}", flush=True)
     print("Open that link once per browser; the key is then kept in a cookie. Ctrl+C stops.", flush=True)
     try:

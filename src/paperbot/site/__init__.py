@@ -107,11 +107,11 @@ def load_digests(digest_dir: Path) -> list[DigestPage]:
             for path in sorted(digest_dir.glob("*.md"), key=lambda p: p.stem, reverse=True)]
 
 
-def digest_html(page: DigestPage) -> str:
-    return _page(page.title, page.body, back=True)
+def digest_html(page: DigestPage, nav: str = "") -> str:
+    return _page(page.title, nav + page.body, back=not nav)
 
 
-def index_html(pages: list[DigestPage]) -> str:
+def index_html(pages: list[DigestPage], nav: str = "") -> str:
     if pages:
         items = "\n".join(
             f'<li><a href="{html.escape(p.stem)}">{html.escape(p.title)}</a>'
@@ -119,4 +119,4 @@ def index_html(pages: list[DigestPage]) -> str:
         body = f'<h1>Paper digests</h1>\n<ul class="digests">\n{items}\n</ul>'
     else:
         body = "<h1>Paper digests</h1>\n<p>No digests yet.</p>"
-    return _page("Paper digests", body, back=False)
+    return _page("Paper digests", nav + body, back=False)
